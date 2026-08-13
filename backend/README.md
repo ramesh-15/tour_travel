@@ -1,0 +1,115 @@
+# Nomad Wanderers Backend
+
+FastAPI backend for the Nomad Wanderers frontend. It provides public tour browsing and request submission, plus JWT-protected admin management for tours, contact enquiries, and custom journeys.
+
+## Prerequisites
+
+- Python 3.11 or later
+- pip
+
+## Setup and start
+
+Run these commands from the `backend` directory:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:JWT_SECRET = "replace-this-with-a-long-random-production-secret"
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+The API will be available at `http://localhost:8000`.
+
+- Health check: `http://localhost:8000/health`
+- Interactive API docs: `http://localhost:8000/docs`
+
+`--reload` is for development only. Remove it in production.
+
+## Configuration
+
+Set these as PowerShell environment variables before starting Uvicorn:
+
+```powershell
+$env:JWT_SECRET = "a-long-random-secret"
+$env:CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+$env:ASSET_BASE_URL = "http://localhost:8000"
+```
+
+Use a private, randomly generated `JWT_SECRET` in production. The backend reads `db.env` only for database credentials; set other values in the environment or configure your deployment platform.
+
+Set `ASSET_BASE_URL` to the public backend URL before running `seed_tours.py` in production, for example `https://api.example.com`. This makes seeded tour image links point to the deployed backend instead of localhost.
+
+## Database
+
+PostgreSQL is used for application data. The backend reads server-only credentials from `backend/db.env` and creates the required tables and indexes on startup.
+
+```text
+database_name=your_database
+host=localhost
+port=5432
+username=your_postgres_user
+password=your_postgres_password
+```
+
+The database starts empty—tours must be created from the admin dashboard. Schema and database access code are kept in `db_models.py`; API routes and authentication are in `main.py`.
+
+You may override these values with `POSTGRES_DATABASE`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
+
+This code change does not copy data from MySQL. Back up the MySQL database first, then migrate its data separately (for example, with `pgloader`) before pointing the application at PostgreSQL. Start the backend once against PostgreSQL to create the target schema, then import data while preserving IDs and reset the PostgreSQL identity sequences.
+
+Copy `db.env.example` to `db.env` and replace every placeholder with the PostgreSQL database credentials. `db.env` is intentionally excluded from Git.
+
+## Authentication
+
+The current development credentials are static:
+
+```text
+Username: admin
+Password: admin
+```
+
+`POST /api/admin/login` returns an eight-hour JWT. Send it for all protected admin endpoints:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+`POST /api/admin/logout` stores the revoked token in PostgreSQL. After logout, that token cannot access admin APIs again.
+
+Replace the static credentials with proper user management before production use.
+
+## API endpoints
+
+| Method | Path | Authentication | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/health` | No | Service health check |
+| `GET` | `/api/tours` | No | List published tours; supports `city`, `mode`, `trip_type`, `category`, `search`, `page`, and `page_size` |
+| `GET` | `/api/tours/{tour_id}` | No | Get one published tour |
+| `POST` | `/api/contact-enquiries` | No | Submit a general or booking enquiry |
+| `POST` | `/api/custom-journeys` | No | Submit a Design your journey request |
+| `POST` | `/api/demo-payments` | No | Complete a non-production demo payment |
+| `POST` | `/api/admin/login` | No | Receive a JWT |
+| `POST` | `/api/admin/logout` | JWT | Revoke the current JWT |
+| `GET` | `/api/admin/tours` | JWT | List all tours, including drafts |
+| `POST` | `/api/admin/tours` | JWT | Create a tour |
+| `PUT` | `/api/admin/tours/{tour_id}` | JWT | Update a tour |
+| `DELETE` | `/api/admin/tours/{tour_id}` | JWT | Delete a tour |
+| `GET` | `/api/admin/contact-enquiries` | JWT | List contact and booking enquiries |
+| `PUT` | `/api/admin/contact-enquiries/{enquiry_id}` | JWT | Update enquiry status or follow-up notes |
+| `DELETE` | `/api/admin/contact-enquiries/{enquiry_id}` | JWT | Delete an enquiry |
+| `GET` | `/api/admin/custom-journeys` | JWT | List Design your journey requests |
+| `PUT` | `/api/admin/custom-journeys/{journey_id}` | JWT | Update status, itinerary notes, or quote |
+| `DELETE` | `/api/admin/custom-journeys/{journey_id}` | JWT | Delete a custom journey request |
+| `GET` | `/api/admin/demo-payments` | JWT | List demo payment records |
+
+All admin list endpoints support server-side pagination and search:
+
+```text
+?page=1&page_size=6&search=mumbai
+```
+
+`page_size` accepts values from 1 to 100. Each response returns `items`, `total`, `page`, and `page_size`.
+
+## Connecting the frontend
+
+Start this backend on port `8000`, then start the frontend from the project root. The frontend uses `VITE_API_URL` if supplied; otherwise it connects to `http://localhost:8000`.

@@ -1,0 +1,104 @@
+For your new travel-booking business, I recommend this setup:
+Part	Start with	Upgrade later
+Frontend React website	Vercel	Keep Vercel
+FastAPI backend	Railway	AWS App Runner / ECS
+MySQL database	Amazon RDS MySQL (Mumbai)	RDS Multi-AZ / larger instance
+Tour images	Cloudinary or AWS S3	AWS S3 + CloudFront
+Domain/DNS	Cloudflare	Keep Cloudflare
+
+
+Why this is a good fit:
+Vercel is excellent for your React/Vite frontend: easy deployment from GitHub, HTTPS, CDN, and simple updates. It has a free Hobby plan and paid plans when the business grows. Vercel plans
+Railway is the easiest low-maintenance option for deploying your FastAPI backend initially. It also supports MySQL services and simple environment-variable configuration. Railway MySQL documentation
+For your actual booking, customer, and payment data, I recommend Amazon RDS MySQL from the beginning, rather than keeping business data only in a small app-hosted database. AWS has a Mumbai region (ap-south-1) and a Hyderabad region, helping keep latency lower for Indian users. AWS India regions
+Recommended starting architecture:
+Customer
+   ↓
+Vercel — React frontend
+   ↓
+Railway — FastAPI backend
+   ↓
+AWS RDS MySQL — booking, payment, enquiry and admin data
+For MySQL, start with:
+Provider: Amazon RDS MySQL
+Region: ap-south-1 (Mumbai)
+Instance: Small burstable instance, such as db.t4g.micro
+Availability: Single-AZ initially
+Storage: 20–30 GB gp3
+Backups: Automated daily backups, 7-day retention
+When bookings increase, upgrade without changing your application design:
+Single-AZ RDS
+→ larger instance
+→ Multi-AZ high availability
+→ read replica if reporting grows
+Important setup points:
+Never use the MySQL root account for the application.
+Create a dedicated nomad_app database user with only required permissions.
+Put database credentials in cloud environment variables—not in GitHub.
+Enable automatic backups before accepting real bookings/payments.
+Store tour images in Cloudinary or S3, not inside the database.
+Before live Razorpay launch, use verified webhooks to mark payments successful.
+If you want the lowest-cost single-platform start, use Railway for both FastAPI and MySQL, then migrate MySQL to RDS once bookings become regular. But for a real booking business, my stronger recommendation is: Vercel + Railway backend + AWS RDS MySQL Mumbai.
+
+
+
+scenaio 2:
+
+For ~1,000 bookings/day, use a production AWS setup—not Railway/MySQL containers. Also, 1,000 bookings from 1,000–2,000 daily visitors implies an unusually high conversion rate, so plan for payment and booking peaks rather than average traffic.
+Recommended architecture:
+Users
+  ↓
+CloudFront + S3
+React frontend
+  ↓
+AWS WAF + Application Load Balancer
+  ↓
+ECS Fargate (FastAPI)
+Minimum 2 API instances, autoscale to 6–10
+  ↓
+Amazon RDS MySQL Multi-AZ
+  ↓
+SQS background queue
+Email + WhatsApp confirmation workers
+Use AWS Mumbai (ap-south-1) for backend and database because it is in India and has three Availability Zones; AWS also has a Hyderabad region. AWS India regions
+Recommended services:
+Area	Recommendation
+Frontend	AWS S3 + CloudFront
+Backend	ECS Fargate with FastAPI Docker container
+Load balancing	Application Load Balancer
+Database	Amazon RDS MySQL 8, Multi-AZ
+Initial database size	Start with db.t4g.medium Multi-AZ; load-test before launch
+Background jobs	Amazon SQS + separate worker service
+Images	S3 + CloudFront
+Secrets	AWS Secrets Manager
+Monitoring	CloudWatch alarms, logs, error alerts
+Security	AWS WAF, HTTPS, rate limiting, private RDS subnet
+
+
+For MySQL:
+Use RDS MySQL Multi-AZ, not a single small Railway database.
+Enable automated backups for 30–35 days.
+Use a dedicated nomad_app user—not root.
+Keep RDS private; only the FastAPI service should access it.
+Add a read replica later for dashboards/reports if needed.
+RDS Multi-AZ automatically keeps a synchronous standby database in another Availability Zone for failover. It improves availability, but the standby is not for read scaling; use a read replica or Multi-AZ DB cluster later if reporting traffic grows. RDS Multi-AZ documentation
+Backend scaling:
+Run a minimum of 2 FastAPI ECS tasks from launch.
+Autoscale based on CPU, memory, and ALB requests per target.
+Begin with a maximum of 6–10 tasks, then adjust after load testing.
+ECS supports target-based, scheduled, and predictive autoscaling. ECS autoscaling documentation
+For payment confirmations, do not send email/WhatsApp directly inside the Razorpay webhook request:
+Razorpay webhook verified
+→ mark payment paid in MySQL
+→ add confirmation job to SQS
+→ worker sends email + WhatsApp template
+→ save delivery status
+This prevents slow notification providers from delaying payment confirmation.
+My recommendation:
+AWS CloudFront + S3
+AWS ECS Fargate
+AWS ALB
+AWS RDS MySQL Multi-AZ
+AWS SQS workers
+AWS Secrets Manager + CloudWatch + WAF
+This is the right plan for a real booking business handling 1,000 daily bookings and provides a safe growth path without redesigning later.
