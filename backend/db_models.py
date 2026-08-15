@@ -1,4 +1,4 @@
-"""PostgreSQL schema and data-access helpers for Nomad Wanderers."""
+"""MySQL schema and data-access helpers for Nomad Wanderers."""
 
 from __future__ import annotations
 
@@ -11,10 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
 
-import psycopg
-from psycopg import Connection
-from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb
+import mysql.connector
+from mysql.connector.connection import MySQLConnection
 
 
 DB_ENV_PATH = Path(__file__).with_name("db.env")
@@ -25,7 +23,7 @@ TOUR_COLUMNS = (
 
 
 def _load_db_env() -> dict[str, str]:
-    """Read server-only PostgreSQL settings without overwriting process variables."""
+    """Read server-only MySQL settings without overwriting process variables."""
     values: dict[str, str] = {}
     if not DB_ENV_PATH.exists():
         return values
@@ -39,25 +37,25 @@ def _load_db_env() -> dict[str, str]:
     return values
 
 
-def _postgres_config() -> dict[str, Any]:
+def _mysql_config() -> dict[str, Any]:
     values = _load_db_env()
     config = {
-        "host": os.getenv("POSTGRES_HOST", values.get("host", "localhost")),
-        "port": int(os.getenv("POSTGRES_PORT", values.get("port", "5432"))),
-        "user": os.getenv("POSTGRES_USER", values.get("username", "")),
-        "password": os.getenv("POSTGRES_PASSWORD", values.get("password", "")),
-        "dbname": os.getenv("POSTGRES_DATABASE", values.get("database_name", "")),
+        "host": os.getenv("MYSQL_HOST", values.get("host", "localhost")),
+        "port": int(os.getenv("MYSQL_PORT", values.get("port", "3306"))),
+        "user": os.getenv("MYSQL_USER", values.get("username", "")),
+        "password": os.getenv("MYSQL_PASSWORD", values.get("password", "")),
+        "database": os.getenv("MYSQL_DATABASE", values.get("database_name", "")),
     }
-    if not config["user"] or not config["dbname"]:
+    if not config["user"] or not config["database"]:
         raise RuntimeError(
-            "PostgreSQL configuration is incomplete. Set username and database_name in backend/db.env."
+            "MySQL configuration is incomplete. Set username and database_name in backend/db.env."
         )
     return config
 
 
 @contextmanager
-def database() -> Generator[Connection[dict[str, Any]], None, None]:
-    connection = psycopg.connect(**_postgres_config(), row_factory=dict_row)
+def database() -> Generator[MySQLConnection, None, None]:
+    connection = mysql.connector.connect(**_mysql_config())
     try:
         yield connection
         connection.commit()
@@ -68,7 +66,7 @@ def database() -> Generator[Connection[dict[str, Any]], None, None]:
         connection.close()
 
 
-def _execute(connection: Connection[dict[str, Any]], query: str, parameters: tuple[Any, ...] = ()) -> int:
+def _execute(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
     cursor = connection.cursor()
     try:
         cursor.execute(query, parameters)
@@ -77,20 +75,21 @@ def _execute(connection: Connection[dict[str, Any]], query: str, parameters: tup
         cursor.close()
 
 
-def _insert_and_get_id(connection: Connection[dict[str, Any]], query: str, parameters: tuple[Any, ...] = ()) -> int:
+def _insert_and_get_id(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
     cursor = connection.cursor()
     try:
-        cursor.execute(f"{query.rstrip().rstrip(';')} RETURNING id", parameters)
-        row = cursor.fetchone()
-        if not row:
-            raise RuntimeError("PostgreSQL did not return an inserted record ID.")
-        return int(row["id"])
+        cursor.execute(query, parameters)
+        if cursor.lastrowid is None:
+            raise RuntimeError("MySQL did not return an inserted record ID.")
+        return int(cursor.lastrowid)
     finally:
         cursor.close()
 
 
-def _fetch_one(connection: Connection[dict[str, Any]], query: str, parameters: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    cursor = connection.cursor()
+def _fetch_one(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    # Buffered cursors consume the result set, which prevents mysql-connector's
+    # "Unread result found" error when this cursor is closed.
+    cursor = connection.cursor(dictionary=True, buffered=True)
     try:
         cursor.execute(query, parameters)
         return cursor.fetchone()
@@ -98,8 +97,8 @@ def _fetch_one(connection: Connection[dict[str, Any]], query: str, parameters: t
         cursor.close()
 
 
-def _fetch_all(connection: Connection[dict[str, Any]], query: str, parameters: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    cursor = connection.cursor()
+def _fetch_all(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    cursor = connection.cursor(dictionary=True, buffered=True)
     try:
         cursor.execute(query, parameters)
         return cursor.fetchall()
@@ -108,14 +107,37 @@ def _fetch_all(connection: Connection[dict[str, Any]], query: str, parameters: t
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _ensure_index(connection: MySQLConnection, table: str, index_name: str, columns: str, unique: bool = False) -> None:
+    existing = _fetch_one(
+        connection,
+        """SELECT 1 FROM information_schema.statistics
+        WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s""",
+        (table, index_name),
+    )
+    if not existing:
+        prefix = "UNIQUE " if unique else ""
+        _execute(connection, f"CREATE {prefix}INDEX {index_name} ON {table} ({columns})")
+
+
+def _ensure_column(connection: MySQLConnection, table: str, column: str, definition: str) -> None:
+    existing = _fetch_one(
+        connection,
+        """SELECT 1 FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s""",
+        (table, column),
+    )
+    if not existing:
+        _execute(connection, f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def initialize_database() -> None:
     statements = (
         """
         CREATE TABLE IF NOT EXISTS tours (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             title VARCHAR(160) NOT NULL,
             description TEXT NOT NULL,
             image_url VARCHAR(2048) NOT NULL,
@@ -128,25 +150,25 @@ def initialize_database() -> None:
             capacity SMALLINT NOT NULL DEFAULT 20 CHECK (capacity >= 1),
             departure_date DATE NULL,
             guide_name VARCHAR(120) NULL,
-            highlights JSONB NOT NULL,
+            highlights JSON NOT NULL,
             tag VARCHAR(40) NULL,
             featured BOOLEAN NOT NULL DEFAULT FALSE,
             dark BOOLEAN NOT NULL DEFAULT FALSE,
             published BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS revoked_tokens (
             token_hash CHAR(64) NOT NULL PRIMARY KEY,
             expires_at BIGINT NOT NULL,
-            revoked_at TIMESTAMPTZ NOT NULL
+            revoked_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS contact_enquiries (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             email VARCHAR(254) NOT NULL,
             phone VARCHAR(40) NOT NULL,
@@ -154,13 +176,13 @@ def initialize_database() -> None:
             message TEXT NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'new',
             admin_notes TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS custom_journeys (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             email VARCHAR(254) NOT NULL,
             phone VARCHAR(40) NOT NULL,
@@ -173,13 +195,13 @@ def initialize_database() -> None:
             status VARCHAR(20) NOT NULL DEFAULT 'new',
             admin_notes TEXT NOT NULL,
             quote TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS demo_payments (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             booking_id BIGINT NULL,
             name VARCHAR(120) NOT NULL,
             email VARCHAR(254) NOT NULL,
@@ -189,12 +211,12 @@ def initialize_database() -> None:
             payment_method VARCHAR(20) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'paid',
             transaction_reference VARCHAR(48) NOT NULL UNIQUE,
-            created_at TIMESTAMPTZ NOT NULL
+            created_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS users (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             username VARCHAR(80) NOT NULL UNIQUE,
             email VARCHAR(254) NOT NULL UNIQUE,
@@ -202,13 +224,13 @@ def initialize_database() -> None:
             password_hash VARCHAR(255) NOT NULL,
             role VARCHAR(20) NOT NULL DEFAULT 'customer',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS bookings (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             user_id BIGINT NOT NULL,
             tour_id BIGINT NOT NULL,
             travel_date DATE NOT NULL,
@@ -216,21 +238,21 @@ def initialize_database() -> None:
             special_requests TEXT NOT NULL,
             booking_status VARCHAR(20) NOT NULL DEFAULT 'pending',
             payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
-            created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL,
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL,
             CONSTRAINT bookings_user_fk FOREIGN KEY (user_id) REFERENCES users(id),
             CONSTRAINT bookings_tour_fk FOREIGN KEY (tour_id) REFERENCES tours(id)
         )
         """,
         """
         CREATE TABLE IF NOT EXISTS notification_logs (
-            id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
             booking_id BIGINT NOT NULL,
             channel VARCHAR(20) NOT NULL,
             recipient VARCHAR(254) NOT NULL,
             delivery_status VARCHAR(20) NOT NULL DEFAULT 'queued',
             requested_by BIGINT NULL,
-            created_at TIMESTAMPTZ NOT NULL,
+            created_at DATETIME(6) NOT NULL,
             CONSTRAINT notification_logs_booking_fk FOREIGN KEY (booking_id) REFERENCES bookings(id)
         )
         """,
@@ -238,37 +260,29 @@ def initialize_database() -> None:
     with database() as connection:
         for statement in statements:
             _execute(connection, statement)
-        # Compatibility additions for PostgreSQL databases created by earlier releases.
-        for statement in (
-            "ALTER TABLE tours ADD COLUMN IF NOT EXISTS trip_type VARCHAR(20) NOT NULL DEFAULT 'One-day trip'",
-            "ALTER TABLE tours ADD COLUMN IF NOT EXISTS capacity SMALLINT NOT NULL DEFAULT 20",
-            "ALTER TABLE tours ADD COLUMN IF NOT EXISTS departure_date DATE NULL",
-            "ALTER TABLE tours ADD COLUMN IF NOT EXISTS guide_name VARCHAR(120) NULL",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(80)",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40) NOT NULL DEFAULT ''",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'customer'",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-            "ALTER TABLE demo_payments ADD COLUMN IF NOT EXISTS booking_id BIGINT NULL",
-            "CREATE INDEX IF NOT EXISTS contact_enquiries_created_at_idx ON contact_enquiries (created_at)",
-            "CREATE INDEX IF NOT EXISTS custom_journeys_created_at_idx ON custom_journeys (created_at)",
-            "CREATE INDEX IF NOT EXISTS demo_payments_booking_idx ON demo_payments (booking_id)",
-            "CREATE INDEX IF NOT EXISTS demo_payments_created_at_idx ON demo_payments (created_at)",
-            "CREATE INDEX IF NOT EXISTS users_email_idx ON users (email)",
-            "CREATE INDEX IF NOT EXISTS bookings_user_created_idx ON bookings (user_id, created_at)",
-            "CREATE INDEX IF NOT EXISTS notification_logs_booking_created_idx ON notification_logs (booking_id, created_at)",
+        # Compatibility additions for databases created by earlier releases.
+        for table, column, definition in (
+            ("tours", "trip_type", "VARCHAR(20) NOT NULL DEFAULT 'One-day trip'"),
+            ("tours", "capacity", "SMALLINT NOT NULL DEFAULT 20"),
+            ("tours", "departure_date", "DATE NULL"),
+            ("tours", "guide_name", "VARCHAR(120) NULL"),
+            ("users", "username", "VARCHAR(80) NULL"),
+            ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
+            ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'customer'"),
+            ("users", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
+            ("demo_payments", "booking_id", "BIGINT NULL"),
         ):
-            _execute(connection, statement)
-        _execute(connection, "UPDATE users SET username = 'user' || id::text WHERE username IS NULL OR username = ''")
-        _execute(connection, "ALTER TABLE users ALTER COLUMN username SET NOT NULL")
-        username_index = _fetch_one(
-            connection,
-            """SELECT 1 FROM pg_indexes
-            WHERE schemaname = current_schema() AND tablename = 'users'
-            AND indexdef LIKE %s AND indexdef LIKE %s""",
-            ("%UNIQUE%", "%(username)%"),
-        )
-        if not username_index:
-            _execute(connection, "CREATE UNIQUE INDEX users_username_unique ON users (username)")
+            _ensure_column(connection, table, column, definition)
+        _execute(connection, "UPDATE users SET username = CONCAT('user', id) WHERE username IS NULL OR username = ''")
+        _execute(connection, "ALTER TABLE users MODIFY COLUMN username VARCHAR(80) NOT NULL")
+        _ensure_index(connection, "users", "users_username_unique", "username", unique=True)
+        _ensure_index(connection, "contact_enquiries", "contact_enquiries_created_at_idx", "created_at")
+        _ensure_index(connection, "custom_journeys", "custom_journeys_created_at_idx", "created_at")
+        _ensure_index(connection, "demo_payments", "demo_payments_booking_idx", "booking_id")
+        _ensure_index(connection, "demo_payments", "demo_payments_created_at_idx", "created_at")
+        _ensure_index(connection, "users", "users_email_idx", "email")
+        _ensure_index(connection, "bookings", "bookings_user_created_idx", "user_id, created_at")
+        _ensure_index(connection, "notification_logs", "notification_logs_booking_created_idx", "booking_id, created_at")
 
 
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -315,7 +329,7 @@ def get_tour(tour_id: int) -> dict[str, Any] | None:
 
 def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any] | None:
     values = {field: data[field] for field in TOUR_COLUMNS}
-    values["highlights"] = Jsonb(values["highlights"])
+    values["highlights"] = json.dumps(values["highlights"])
     now = _utc_now()
     with database() as connection:
         if tour_id is None:
@@ -351,7 +365,7 @@ def revoke_token(token: str, expires_at: int) -> None:
         _execute(
             connection,
             "INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at) VALUES (%s, %s, %s) "
-            "ON CONFLICT (token_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at",
+            "ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at), revoked_at = VALUES(revoked_at)",
             (token_hash, expires_at, _utc_now()),
         )
 

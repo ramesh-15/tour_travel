@@ -41,23 +41,23 @@ Set `ASSET_BASE_URL` to the public backend URL before running `seed_tours.py` in
 
 ## Database
 
-PostgreSQL is used for application data. The backend reads server-only credentials from `backend/db.env` and creates the required tables and indexes on startup.
+MySQL is used for application data. The backend reads server-only credentials from `backend/db.env` and creates the required tables and indexes on startup.
 
 ```text
 database_name=your_database
 host=localhost
-port=5432
-username=your_postgres_user
-password=your_postgres_password
+port=3306
+username=your_mysql_user
+password=your_mysql_password
 ```
 
 The database starts empty—tours must be created from the admin dashboard. Schema and database access code are kept in `db_models.py`; API routes and authentication are in `main.py`.
 
-You may override these values with `POSTGRES_DATABASE`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
+You may override these values with `MYSQL_DATABASE`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, and `MYSQL_PASSWORD`.
 
-This code change does not copy data from MySQL. Back up the MySQL database first, then migrate its data separately (for example, with `pgloader`) before pointing the application at PostgreSQL. Start the backend once against PostgreSQL to create the target schema, then import data while preserving IDs and reset the PostgreSQL identity sequences.
+This code change does not copy existing PostgreSQL data into MySQL. Migrate any existing records separately before switching production traffic.
 
-Copy `db.env.example` to `db.env` and replace every placeholder with the PostgreSQL database credentials. `db.env` is intentionally excluded from Git.
+Set `backend/db.env` to your MySQL database credentials. `db.env` is intentionally excluded from Git.
 
 ## Authentication
 
@@ -68,13 +68,13 @@ Username: admin
 Password: admin
 ```
 
-`POST /api/admin/login` returns an eight-hour JWT. Send it for all protected admin endpoints:
+`POST /api/auth/login` returns an eight-hour JWT after validating the configured bootstrap administrator or a MySQL user account. Send it for protected endpoints:
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-`POST /api/admin/logout` stores the revoked token in PostgreSQL. After logout, that token cannot access admin APIs again.
+`POST /api/admin/logout` stores the revoked token in MySQL. After logout, that token cannot access admin APIs again.
 
 Replace the static credentials with proper user management before production use.
 
@@ -88,7 +88,7 @@ Replace the static credentials with proper user management before production use
 | `POST` | `/api/contact-enquiries` | No | Submit a general or booking enquiry |
 | `POST` | `/api/custom-journeys` | No | Submit a Design your journey request |
 | `POST` | `/api/demo-payments` | No | Complete a non-production demo payment |
-| `POST` | `/api/admin/login` | No | Receive a JWT |
+| `POST` | `/api/auth/login` | No | Authenticate an admin, staff member, or customer and receive a JWT |
 | `POST` | `/api/admin/logout` | JWT | Revoke the current JWT |
 | `GET` | `/api/admin/tours` | JWT | List all tours, including drafts |
 | `POST` | `/api/admin/tours` | JWT | Create a tour |

@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -26,7 +26,13 @@ import db_models
 
 
 ENV_PATH = Path(__file__).with_name(".env")
-STATIC_ASSET_DIR = Path(__file__).with_name("static")
+TOUR_UPLOADS_PATH = Path(__file__).with_name("uploads") / "tours"
+MAX_TOUR_IMAGE_BYTES = 5 * 1024 * 1024
+TOUR_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 
 def load_environment_file() -> None:
@@ -42,9 +48,9 @@ def load_environment_file() -> None:
 
 
 load_environment_file()
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
-JWT_SECRET = os.getenv("JWT_SECRET", "local-development-secret-change-before-production")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_EXPIRY_HOURS = 8
 TripType = Literal["One-day trip", "Weekly trip"]
 UserRole = Literal["customer", "admin", "operations", "support"]
@@ -85,11 +91,6 @@ class PaginatedResponse(BaseModel, Generic[ResponseItem]):
     total: int
     page: int
     page_size: int
-
-
-class AdminLogin(BaseModel):
-    username: str
-    password: str
 
 
 class UserRegistration(BaseModel):
@@ -331,7 +332,6 @@ staff_required = require_roles("admin", "operations", "support")
 
 
 app = FastAPI(title="Nomad Wanderers API", version="1.0.0")
-app.mount("/static", StaticFiles(directory=STATIC_ASSET_DIR), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173").split(","),
@@ -339,6 +339,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
+TOUR_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=TOUR_UPLOADS_PATH.parent), name="uploads")
 
 
 @app.on_event("startup")
@@ -351,11 +353,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/admin/login")
-def login(credentials: AdminLogin) -> dict[str, str | int]:
-    if credentials.username != ADMIN_USERNAME or credentials.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
-    return {"access_token": create_access_token(credentials.username, "admin"), "token_type": "bearer", "expires_in": JWT_EXPIRY_HOURS * 3600}
+@app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
+async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
+    """Store an admin-uploaded tour image and return its public URL."""
+    extension = TOUR_IMAGE_TYPES.get(image.content_type or "")
+    if not extension:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Upload a JPEG, PNG, or WebP image.")
+
+    contents = await image.read(MAX_TOUR_IMAGE_BYTES + 1)
+    if not contents:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The image file is empty.")
+    if len(contents) > MAX_TOUR_IMAGE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image files must be 5 MB or smaller.")
+
+    filename = f"{uuid.uuid4().hex}{extension}"
+    (TOUR_UPLOADS_PATH / filename).write_bytes(contents)
+    base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
+    return {"image_url": f"{base_url}/uploads/tours/{filename}"}
 
 
 @app.get("/api/admin/me")
@@ -378,6 +392,8 @@ def register_account(data: UserRegistration) -> Account:
 
 @app.post("/api/auth/login")
 def login_account(credentials: UserLogin) -> dict[str, str | int]:
+    # The bootstrap administrator is configured in backend/.env. All other
+    # accounts are stored in MySQL and carry their own role.
     if credentials.username == ADMIN_USERNAME and credentials.password == ADMIN_PASSWORD:
         return {"access_token": create_access_token(ADMIN_USERNAME, "admin"), "token_type": "bearer", "expires_in": JWT_EXPIRY_HOURS * 3600, "role": "admin"}
     user = db_models.get_user_by_username(credentials.username)
