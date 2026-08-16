@@ -33,6 +33,18 @@ const fallbackTours = []
 const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const businessWhatsAppNumber = '919876543210'
 
+function requiresCustomerAuth(destination) {
+  const url = new URL(destination, window.location.origin)
+  const protectedIntent = url.pathname === '/contact' && ['book', 'custom'].includes(url.searchParams.get('intent'))
+  return protectedIntent || url.pathname === '/payment'
+}
+
+function AuthRequiredModal({ destination, onCancel, onContinue }) {
+  const intent = new URL(destination, window.location.origin).searchParams.get('intent')
+  const action = intent === 'custom' ? 'plan your trip' : 'book this experience'
+  return <div className="auth-required-backdrop" role="presentation" onMouseDown={onCancel}><section className="auth-required-modal" role="dialog" aria-modal="true" aria-labelledby="auth-required-title" onMouseDown={event => event.stopPropagation()}><button className="auth-required-close" onClick={onCancel} aria-label="Close">×</button><span className="material-symbols-outlined auth-required-icon">lock</span><Eyebrow>Account required</Eyebrow><h2 id="auth-required-title">Sign in to continue</h2><p>Please log in or create an account before you {action}. We’ll bring you straight back here afterward.</p><div className="auth-required-actions"><button className="primary-button" onClick={onContinue}>Continue to login →</button><button className="text-button" onClick={onCancel}>Not now</button></div></section></div>
+}
+
 function apiTourToUi(tour) {
   return {
     ...tour,
@@ -92,7 +104,21 @@ function App() {
     const token = sessionStorage.getItem('nomad_staff_token')
     return token ? { token } : null
   })
-  const go = (to) => { const next = new URL(to, window.location.origin); window.history.pushState({}, '', `${next.pathname}${next.search}${next.hash}`); setPath(next.pathname); setQuery(next.search); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const [pendingAuthDestination, setPendingAuthDestination] = useState('')
+  const go = (to, customerAuthenticated = false) => {
+    const requested = new URL(to, window.location.origin)
+    if (!userSession && !customerAuthenticated && requiresCustomerAuth(requested.href)) {
+      const destination = `${requested.pathname}${requested.search}${requested.hash}`
+      sessionStorage.setItem('nomad_after_login', destination)
+      setPendingAuthDestination(destination)
+      return
+    }
+    const next = requested
+    window.history.pushState({}, '', `${next.pathname}${next.search}${next.hash}`)
+    setPath(next.pathname)
+    setQuery(next.search)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
   const clearAdminSession = () => {
     sessionStorage.removeItem('nomad_admin_token')
     setAdminSession(null)
@@ -129,7 +155,12 @@ function App() {
   }
   const authenticateByRole = ({ token, role }) => {
     if (role === 'customer') {
-      sessionStorage.setItem('nomad_user_token', token); setUserSession({ token }); go('/')
+      const currentDestination = `${path}${query}`
+      const pendingDestination = sessionStorage.getItem('nomad_after_login')
+      const destination = pendingDestination || (requiresCustomerAuth(currentDestination) ? currentDestination : '/')
+      sessionStorage.removeItem('nomad_after_login')
+      setPendingAuthDestination('')
+      sessionStorage.setItem('nomad_user_token', token); setUserSession({ token }); go(destination, true)
     } else if (role === 'admin') {
       sessionStorage.setItem('nomad_admin_token', token); setAdminSession({ token }); go('/admin')
     } else {
@@ -143,8 +174,12 @@ function App() {
     }).catch(() => {})
   }, [])
   const loginPage = <UnifiedLogin apiBaseUrl={apiBaseUrl} onAuthenticated={authenticateByRole} />
-  const page = path === '/login' ? loginPage : path === '/admin/team' ? (adminSession ? <AdminTeamPortal apiBaseUrl={apiBaseUrl} session={adminSession} onLogout={logoutAdmin} onBack={() => go('/admin')} /> : loginPage) : path === '/admin' ? (adminSession ? <AdminDashboardV2 session={adminSession} onSessionExpired={clearAdminSession} onManageTeam={() => go('/admin/team')} onTourSaved={(tour) => setTours(current => tour.published ? [apiTourToUi(tour), ...current.filter(item => item.id !== tour.id)] : current.filter(item => item.id !== tour.id))} onTourDeleted={(tourId) => setTours(current => current.filter(tour => tour.id !== tourId))} /> : loginPage) : path === '/staff' ? (staffSession ? <StaffPortal apiBaseUrl={apiBaseUrl} session={staffSession} onAuthenticated={(nextSession) => { sessionStorage.setItem('nomad_staff_token', nextSession.token); setStaffSession(nextSession) }} onLogout={logoutStaff} /> : loginPage) : path === '/account' ? (userSession ? <UserPortal apiBaseUrl={apiBaseUrl} session={userSession} onAuthenticated={(nextSession) => { sessionStorage.setItem('nomad_user_token', nextSession.token); setUserSession(nextSession) }} onLogout={logoutUser} /> : loginPage) : path === '/about' ? <About go={go} /> : path === '/tours/festival' ? <ToursV3 go={go} city="" category="Festival" /> : path === '/tours' ? <ToursV3 go={go} city={new URLSearchParams(query).get('city') || ''} /> : path === '/trips/one-day' ? <TripsPageV2 go={go} type="one-day" /> : path === '/trips/weekly' ? <TripsPageV2 go={go} type="weekly" /> : path === '/tours/dharavi' ? <Dharavi go={go} /> : path === '/payment' ? <DummyPayment session={userSession} /> : path === '/contact' ? <ContactFlowV2 /> : <Home go={go} />
-  return <>{path !== '/login' && <Header path={path} go={go} userSession={userSession} onUserLogout={userSession ? logoutUser : null} onStaffLogout={path === '/staff' && staffSession ? logoutStaff : null} onAdminLogout={path.startsWith('/admin') && adminSession ? logoutAdmin : null} />}{page}{path !== '/login' && <><Footer go={go} /><a className="floating-whatsapp" href={`https://wa.me/${businessWhatsAppNumber}?text=Hello%20Nomad%20Wanderers%2C%20I%20would%20like%20to%20plan%20a%20tour.`} target="_blank" rel="noreferrer" aria-label="Chat with Nomad Wanderers on WhatsApp"><span className="material-symbols-outlined">chat</span><span>WhatsApp</span></a></>}</>
+  const customerRouteIsProtected = requiresCustomerAuth(`${path}${query}`)
+  const showingLogin = path === '/login' || (customerRouteIsProtected && !userSession)
+  const page = showingLogin ? loginPage : path === '/admin/team' ? (adminSession ? <AdminTeamPortal apiBaseUrl={apiBaseUrl} session={adminSession} onLogout={logoutAdmin} onBack={() => go('/admin')} /> : loginPage) : path === '/admin' ? (adminSession ? <AdminDashboardV2 session={adminSession} onSessionExpired={clearAdminSession} onManageTeam={() => go('/admin/team')} onTourSaved={(tour) => setTours(current => tour.published ? [apiTourToUi(tour), ...current.filter(item => item.id !== tour.id)] : current.filter(item => item.id !== tour.id))} onTourDeleted={(tourId) => setTours(current => current.filter(tour => tour.id !== tourId))} /> : loginPage) : path === '/staff' ? (staffSession ? <StaffPortal apiBaseUrl={apiBaseUrl} session={staffSession} onAuthenticated={(nextSession) => { sessionStorage.setItem('nomad_staff_token', nextSession.token); setStaffSession(nextSession) }} onLogout={logoutStaff} /> : loginPage) : path === '/account' ? (userSession ? <UserPortal apiBaseUrl={apiBaseUrl} session={userSession} onAuthenticated={(nextSession) => { sessionStorage.setItem('nomad_user_token', nextSession.token); setUserSession(nextSession) }} onLogout={logoutUser} /> : loginPage) : path === '/about' ? <About go={go} /> : path === '/tours/festival' ? <ToursV3 go={go} city="" category="Festival" /> : path === '/tours' ? <ToursV3 go={go} city={new URLSearchParams(query).get('city') || ''} /> : path === '/trips/one-day' ? <TripsPageV2 go={go} type="one-day" /> : path === '/trips/weekly' ? <TripsPageV2 go={go} type="weekly" /> : path === '/tours/dharavi' ? <Dharavi go={go} /> : path === '/payment' ? <DummyPayment session={userSession} /> : path === '/contact' ? <ContactFlowV2 /> : <Home go={go} />
+  const closeAuthPrompt = () => { sessionStorage.removeItem('nomad_after_login'); setPendingAuthDestination('') }
+  const continueToLogin = () => { setPendingAuthDestination(''); go('/login') }
+  return <>{!showingLogin && <Header path={path} go={go} userSession={userSession} onUserLogout={userSession ? logoutUser : null} onStaffLogout={path === '/staff' && staffSession ? logoutStaff : null} onAdminLogout={path.startsWith('/admin') && adminSession ? logoutAdmin : null} />}{page}{!showingLogin && <><Footer go={go} /><a className="floating-whatsapp" href={`https://wa.me/${businessWhatsAppNumber}?text=Hello%20Nomad%20Wanderers%2C%20I%20would%20like%20to%20plan%20a%20tour.`} target="_blank" rel="noreferrer" aria-label="Chat with Nomad Wanderers on WhatsApp"><span className="material-symbols-outlined">chat</span><span>WhatsApp</span></a></>}{pendingAuthDestination && <AuthRequiredModal destination={pendingAuthDestination} onCancel={closeAuthPrompt} onContinue={continueToLogin} />}</>
 }
 
 function Header({ path, go, userSession, onUserLogout, onStaffLogout, onAdminLogout }) {
@@ -528,7 +563,7 @@ function ContactFlow() {
   return <main className="top-space"><Hero image="https://images.unsplash.com/photo-1524492412937-b28074a5d7da?auto=format&fit=crop&w=2000&q=85" className="contact-hero"><div className="hero-content center"><Eyebrow>{isCustom ? 'Tailored travel' : isBooking ? 'Tour booking' : 'Get in touch'}</Eyebrow><h1>{title}</h1><p>{description}</p><div className="contact-links"><a href="https://wa.me/919876543210">◉ Chat on WhatsApp</a><a href="tel:+919876543210">☎ +91 98765 43210</a><a href="mailto:hello@nomadwanderers.in">✉ hello@nomadwanderers.in</a></div></div></Hero><section className="section contact-grid"><div><Eyebrow>{isCustom ? 'Your trip, your way' : isBooking ? 'A few final details' : 'We are here'}</Eyebrow><h2>{isCustom ? 'A journey built around you.' : isBooking ? 'Reserve your place with confidence.' : 'How can we help?'}</h2><p className="lead">{isCustom ? 'Share your dates, cities, interests and travel style. We will come back with a thoughtfully paced route and clear recommendations.' : isBooking ? 'This is a booking request, not a payment. We will check the details with you before confirming anything.' : 'Use this form for general questions, partnerships, support or anything else you would like to discuss.'}</p><div className="office-card"><b>Main Office</b><p>⌖ Colaba Causeway, Mumbai<br />Maharashtra 400001, India</p><p>◷ Monday — Friday: 9:00 AM – 6:00 PM IST</p></div></div><form className="contact-form journey-form" onSubmit={submit}><h2>{title}</h2><p>{isCustom ? 'The more you share, the more personal your itinerary can be.' : isBooking ? 'Your selected tour is held below for this request.' : 'We normally reply within one business day.'}</p><label>Your name<input required placeholder="Your full name" /></label><div className="form-row"><label>Email address<input required type="email" placeholder="you@example.com" /></label><label>Phone or WhatsApp<input required type="tel" placeholder="+91 98765 43210" /></label></div>{isBooking && <><label>Selected tour<input value={requestedTour || 'Tour enquiry'} readOnly /></label><div className="form-row"><label>Preferred date<input required type="date" /></label><label>Number of travellers<select defaultValue="2"><option value="1">1 traveller</option><option value="2">2 travellers</option><option value="3-5">3–5 travellers</option><option value="6+">6+ travellers</option></select></label></div><label>Anything we should know?<textarea rows="4" placeholder="Accessibility needs, celebration plans, questions or other details..." /></label></>}{isCustom && <><label>Places you would like to visit<input required placeholder="e.g. Mumbai, Delhi, Jaipur, Kerala" /></label><div className="form-row"><label>Approximate start date<input required type="date" /></label><label>Trip length<select defaultValue=""><option value="" disabled>Select duration</option><option>3–5 days</option><option>6–8 days</option><option>9–14 days</option><option>15+ days</option></select></label></div><div className="form-row"><label>Number of travellers<select defaultValue="2"><option value="1">1 traveller</option><option value="2">2 travellers</option><option value="3-5">3–5 travellers</option><option value="6+">6+ travellers</option></select></label><label>Budget per person<select defaultValue=""><option value="" disabled>Select a range</option><option>Under ₹25,000</option><option>₹25,000–₹50,000</option><option>₹50,000–₹1,00,000</option><option>₹1,00,000+</option></select></label></div><label>What would make this trip special?<textarea required rows="5" placeholder="Your interests, preferred pace, stay style, food preferences and any must-see experiences..." /></label></>}{!isBooking && !isCustom && <><label>Subject<input required placeholder="How can we help?" /></label><label>Your message<textarea required rows="6" placeholder="Tell us what you have in mind..." /></label></>}<button className="primary-button" type="submit">{buttonText}</button>{sent && <p className="success">{successMessage}</p>}</form></section></main>
 }
 
-function ContactFlowV2() {
+function ContactFlowV2({ session }) {
   const [sent, setSent] = useState(false)
   const [status, setStatus] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -538,6 +573,21 @@ function ContactFlowV2() {
   const isCustom = intent === 'custom'
   const isBooking = intent === 'book' || Boolean(requestedTour)
   const title = isCustom ? 'Plan Your Trip' : isBooking ? 'Book Your Tour' : 'Contact Our Team'
+  const customerToken = session?.token || sessionStorage.getItem('nomad_user_token')
+  useEffect(() => {
+    if ((!isBooking && !isCustom) || !customerToken) return
+    fetch(`${apiBaseUrl}/api/auth/me`, { headers: { Authorization: `Bearer ${customerToken}` } })
+      .then(async response => {
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.detail || 'Unable to load your profile details.')
+        const form = document.querySelector('.journey-form')
+        if (!form) return
+        form.elements.name.value = body.name || ''
+        form.elements.email.value = body.email || ''
+        form.elements.phone.value = body.phone || ''
+      })
+      .catch(error => setStatus(error.message))
+  }, [customerToken, isBooking, isCustom])
   const submit = async (event) => {
     event.preventDefault()
     setSubmitting(true)
