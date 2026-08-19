@@ -23,6 +23,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 import db_models
+import cache
+import config
 
 
 ENV_PATH = Path(__file__).with_name(".env")
@@ -48,9 +50,9 @@ def load_environment_file() -> None:
 
 
 load_environment_file()
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-JWT_SECRET = os.getenv("JWT_SECRET")
+ADMIN_USERNAME = config.ADMIN_USERNAME
+ADMIN_PASSWORD = config.ADMIN_PASSWORD
+JWT_SECRET = config.JWT_SECRET
 JWT_EXPIRY_HOURS = 8
 TripType = Literal["One-day trip", "Weekly trip"]
 UserRole = Literal["customer", "admin", "operations", "support"]
@@ -334,10 +336,17 @@ staff_required = require_roles("admin", "operations", "support")
 app = FastAPI(title="Nomad Wanderers API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173").split(","),
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
 TOUR_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=TOUR_UPLOADS_PATH.parent), name="uploads")
@@ -350,7 +359,7 @@ def startup() -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "database": db_models.health(), "redis": cache.status()}
 
 
 @app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
@@ -453,7 +462,9 @@ def list_tours(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=9, ge=1, le=100),
 ) -> PaginatedResponse[Tour]:
-    items, total = db_models.paginate_public_tours(page, page_size, city, mode, trip_type, category, search)
+    key = "tours:list:" + hashlib.sha256(json.dumps([page, page_size, city, mode, trip_type, category, search], default=str).encode()).hexdigest()
+    cached = cache.remember(key, lambda: db_models.paginate_public_tours(page, page_size, city, mode, trip_type, category, search))
+    items, total = cached
     return PaginatedResponse(items=[Tour(**tour) for tour in items], total=total, page=page, page_size=page_size)
 
 
@@ -469,20 +480,20 @@ def list_admin_tours(
 
 @app.get("/api/tours/{tour_id}", response_model=Tour)
 def get_tour(tour_id: int) -> Tour:
-    tour = db_models.get_tour(tour_id)
+    tour = cache.remember(f"tours:item:{tour_id}", lambda: db_models.get_tour(tour_id))
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
     return Tour(**tour)
 
 
 @app.post("/api/bookings", response_model=Booking, status_code=status.HTTP_201_CREATED)
-def create_booking(data: BookingInput, user: dict[str, object] = Depends(customer_required)) -> Booking:
+def create_booking(data: BookingInput, user: dict[str, object] = Depends(customer_required), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=8, max_length=200)) -> Booking:
     if data.travel_date < date.today():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Travel date must be today or later")
     if not db_models.get_tour(data.tour_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tour not found or unavailable")
     try:
-        booking = db_models.create_booking(int(user["id"]), data.model_dump())
+        booking = db_models.create_booking(int(user["id"]), data.model_dump(), idempotency_key)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if not booking:
@@ -518,16 +529,17 @@ def download_booking_confirmation(booking_id: int, user: dict[str, object] = Dep
 
 
 @app.post("/api/bookings/{booking_id}/demo-payment", response_model=DemoPaymentResult)
-def pay_booking_in_demo(booking_id: int, data: BookingPaymentInput, user: dict[str, object] = Depends(customer_required)) -> DemoPaymentResult:
+def pay_booking_in_demo(booking_id: int, data: BookingPaymentInput, user: dict[str, object] = Depends(customer_required), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=8, max_length=200)) -> DemoPaymentResult:
     booking = db_models.get_booking(booking_id)
     if not booking or int(booking["user_id"]) != int(user["id"]):
         raise HTTPException(status_code=404, detail="Booking not found")
     if booking["booking_status"] == "cancelled":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancelled bookings cannot be paid")
-    if booking["payment_status"] == "paid":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This booking is already paid")
-    payment = DemoPayment(**db_models.create_booking_demo_payment(booking, user, data.payment_method))
-    db_models.update_booking(booking_id, "confirmed", "paid")
+    try:
+        payment_row = db_models.create_booking_demo_payment(booking, user, data.payment_method, idempotency_key)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    payment = DemoPayment(**payment_row)
     return DemoPaymentResult(
         payment=payment,
         email_confirmation=f"Demo email confirmation prepared for {payment.email}.",
@@ -565,6 +577,7 @@ def update_operations_tour_schedule(tour_id: int, data: TourScheduleUpdate, _: d
     tour = db_models.update_tour_schedule(tour_id, data.capacity, data.departure_date, data.guide_name)
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
+    cache.invalidate_tours()
     return Tour(**tour)
 
 
@@ -607,7 +620,9 @@ def update_staff_contact_enquiry(enquiry_id: int, data: ContactEnquiryUpdate, _:
 
 @app.post("/api/admin/tours", response_model=Tour, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_required)])
 def create_tour(data: TourInput) -> Tour:
-    return Tour(**db_models.save_tour(data.model_dump(mode="json")))
+    tour = Tour(**db_models.save_tour(data.model_dump(mode="json")))
+    cache.invalidate_tours()
+    return tour
 
 
 @app.put("/api/admin/tours/{tour_id}", response_model=Tour, dependencies=[Depends(admin_required)])
@@ -615,6 +630,7 @@ def update_tour(tour_id: int, data: TourInput) -> Tour:
     tour = db_models.save_tour(data.model_dump(mode="json"), tour_id)
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
+    cache.invalidate_tours()
     return Tour(**tour)
 
 
@@ -622,6 +638,7 @@ def update_tour(tour_id: int, data: TourInput) -> Tour:
 def delete_tour(tour_id: int) -> None:
     if not db_models.delete_tour(tour_id):
         raise HTTPException(status_code=404, detail="Tour not found")
+    cache.invalidate_tours()
 
 
 @app.get("/api/admin/users", response_model=list[Account], dependencies=[Depends(admin_required)])

@@ -6,6 +6,7 @@ FastAPI backend for the Nomad Wanderers frontend. It provides public tour browsi
 
 - Python 3.11 or later
 - pip
+- Redis 6 or later (optional for availability; recommended in production)
 
 ## Setup and start
 
@@ -33,7 +34,39 @@ Set these as PowerShell environment variables before starting Uvicorn:
 $env:JWT_SECRET = "a-long-random-secret"
 $env:CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
 $env:ASSET_BASE_URL = "http://localhost:8000"
+$env:REDIS_URL = "redis://localhost:6379/0"
+$env:CACHE_TTL_SECONDS = "300"
 ```
+
+Copy `.env.example` to `.env` and fill in the provider values for Razorpay,
+PayPal, AWS SES, and Meta WhatsApp Cloud API. The application reads all
+provider credentials from `.env` or the process environment through
+`config.py`. Never commit `.env`; it is ignored by Git. Production deployments
+should set the same names in the hosting platform's secret manager. For PayPal
+sandbox, use `PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com`.
+
+Public tour lists and details use a cache-aside Redis cache. Tour create,
+update, delete, and schedule changes invalidate those entries. Redis failures
+are logged and requests fall back to MySQL, so a cache outage does not take the
+booking API down. `/health` reports MySQL and Redis independently.
+
+## Idempotency and booking safety
+
+Send a stable `Idempotency-Key` header (8-200 characters) when creating a
+booking or paying for one. Retrying the same request with the same key returns
+the original resource; reusing a key with different input returns HTTP 409.
+
+```http
+POST /api/bookings/123/demo-payment
+Idempotency-Key: booking-123-payment-attempt-1
+```
+
+Keys and their resource IDs are persisted in MySQL, so behavior survives API
+restarts and does not depend on Redis. Seat availability is checked inside a
+transaction while the tour row is locked, preventing concurrent last-seat
+bookings from overselling. Payment creation and booking confirmation are also
+one transaction. Notification requests are only queued; an email or WhatsApp
+provider failure never rolls back a successful booking/payment.
 
 Use a private, randomly generated `JWT_SECRET` in production. The backend reads `db.env` only for database credentials; set other values in the environment or configure your deployment platform.
 

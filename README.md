@@ -27,6 +27,41 @@ The application uses `http://localhost:8000` by default. To use a different API 
 VITE_API_URL=http://localhost:8000
 ```
 
+## Run the complete application with Docker
+
+Docker Compose runs the React frontend, FastAPI backend, MySQL, and Redis.
+
+1. Copy `docker.env.example` to `docker.env` and replace both database
+   passwords.
+2. Copy `backend/.env.example` to `backend/.env` if it does not exist. Set a
+   strong `JWT_SECRET`, admin credentials, and any Razorpay, PayPal, AWS SES,
+   or Meta WhatsApp credentials you use.
+3. Build and start everything:
+
+```powershell
+docker compose --env-file docker.env up --build -d
+```
+
+Open the frontend at `http://localhost:3000`, the API documentation at
+`http://localhost:8000/docs`, and the health endpoint at
+`http://localhost:8000/health`.
+
+Useful commands:
+
+```powershell
+docker compose --env-file docker.env ps
+docker compose --env-file docker.env logs -f backend
+docker compose --env-file docker.env down
+```
+
+`down` preserves MySQL, Redis, and uploaded-image volumes. To intentionally
+delete all application data as well, use `docker compose --env-file docker.env
+down -v`.
+
+When deploying on another host, set `PUBLIC_API_URL` and
+`PUBLIC_FRONTEND_URL` in `docker.env` to their browser-accessible HTTPS URLs,
+then rebuild the frontend image.
+
 Restart the Vite server after changing this file. Ensure the frontend origin is included in the backend `CORS_ORIGINS` setting.
 
 ## Admin area

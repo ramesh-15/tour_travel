@@ -17,6 +17,7 @@ backend/nomad_wanderers.db
 backend/__pycache__/
 backend/.env
 backend/db.env
+docker.env
 backend/.venv/
 
 # Editor directories and files

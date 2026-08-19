@@ -256,6 +256,18 @@ def initialize_database() -> None:
             CONSTRAINT notification_logs_booking_fk FOREIGN KEY (booking_id) REFERENCES bookings(id)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS idempotency_keys (
+            user_id BIGINT NOT NULL,
+            operation VARCHAR(40) NOT NULL,
+            idempotency_key VARCHAR(200) NOT NULL,
+            request_hash CHAR(64) NOT NULL,
+            resource_id BIGINT NULL,
+            created_at DATETIME(6) NOT NULL,
+            PRIMARY KEY (user_id, operation, idempotency_key),
+            CONSTRAINT idempotency_user_fk FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """,
     )
     with database() as connection:
         for statement in statements:
@@ -283,6 +295,47 @@ def initialize_database() -> None:
         _ensure_index(connection, "users", "users_email_idx", "email")
         _ensure_index(connection, "bookings", "bookings_user_created_idx", "user_id, created_at")
         _ensure_index(connection, "notification_logs", "notification_logs_booking_created_idx", "booking_id, created_at")
+
+
+def health() -> str:
+    try:
+        with database() as connection:
+            _fetch_one(connection, "SELECT 1 AS healthy")
+        return "ok"
+    except Exception:
+        return "unavailable"
+
+
+def _request_hash(data: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+def _claim_idempotency(connection: MySQLConnection, user_id: int, operation: str, key: str | None, data: dict[str, Any]) -> int | None:
+    if not key:
+        return None
+    digest = _request_hash(data)
+    row = _fetch_one(
+        connection,
+        "SELECT request_hash, resource_id FROM idempotency_keys WHERE user_id = %s AND operation = %s AND idempotency_key = %s FOR UPDATE",
+        (user_id, operation, key),
+    )
+    if row:
+        if row["request_hash"] != digest:
+            raise ValueError("This Idempotency-Key was already used with a different request")
+        if row["resource_id"] is None:
+            raise ValueError("The original request is still being processed")
+        return int(row["resource_id"])
+    _execute(
+        connection,
+        "INSERT INTO idempotency_keys (user_id, operation, idempotency_key, request_hash, resource_id, created_at) VALUES (%s, %s, %s, %s, NULL, %s)",
+        (user_id, operation, key, digest, _utc_now()),
+    )
+    return None
+
+
+def _complete_idempotency(connection: MySQLConnection, user_id: int, operation: str, key: str | None, resource_id: int) -> None:
+    if key:
+        _execute(connection, "UPDATE idempotency_keys SET resource_id = %s WHERE user_id = %s AND operation = %s AND idempotency_key = %s", (resource_id, user_id, operation, key))
 
 
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -461,10 +514,15 @@ def update_user_access(user_id: int, role: str | None = None, is_active: bool | 
     return get_user(user_id)
 
 
-def create_booking(user_id: int, data: dict[str, Any]) -> dict[str, Any]:
+def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | None = None) -> dict[str, Any]:
     now = _utc_now()
     with database() as connection:
-        tour = _fetch_one(connection, "SELECT capacity FROM tours WHERE id = %s AND published = TRUE", (data["tour_id"],))
+        existing_id = _claim_idempotency(connection, user_id, "create_booking", idempotency_key, data)
+        if existing_id is not None:
+            return _fetch_one(connection, """SELECT bookings.*, tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price FROM bookings JOIN tours ON tours.id = bookings.tour_id WHERE bookings.id = %s""", (existing_id,)) or {}
+        # Locking the tour serializes capacity checks for the same departure and
+        # prevents two last-seat requests from both succeeding.
+        tour = _fetch_one(connection, "SELECT capacity FROM tours WHERE id = %s AND published = TRUE FOR UPDATE", (data["tour_id"],))
         if not tour:
             return {}
         reserved = _fetch_one(
@@ -482,6 +540,7 @@ def create_booking(user_id: int, data: dict[str, Any]) -> dict[str, Any]:
             VALUES (%s, %s, %s, %s, %s, 'pending', 'unpaid', %s, %s)""",
             (user_id, data["tour_id"], data["travel_date"], data["travellers"], data.get("special_requests", ""), now, now),
         )
+        _complete_idempotency(connection, user_id, "create_booking", idempotency_key, booking_id)
         return _fetch_one(
             connection,
             """SELECT bookings.*, tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price
@@ -652,16 +711,27 @@ def create_demo_payment(data: dict[str, Any]) -> dict[str, Any]:
     return row or {}
 
 
-def create_booking_demo_payment(booking: dict[str, Any], customer: dict[str, Any], payment_method: str) -> dict[str, Any]:
-    return create_demo_payment({
-        "booking_id": booking["id"],
-        "name": customer["name"],
-        "email": customer["email"],
-        "phone": customer.get("phone", ""),
-        "tour_title": booking["tour_title"],
-        "amount": float(booking["price"]) * int(booking["travellers"]),
-        "payment_method": payment_method,
-    })
+def create_booking_demo_payment(booking: dict[str, Any], customer: dict[str, Any], payment_method: str, idempotency_key: str | None = None) -> dict[str, Any]:
+    data = {"booking_id": booking["id"], "payment_method": payment_method}
+    user_id = int(customer["id"])
+    with database() as connection:
+        existing_id = _claim_idempotency(connection, user_id, "booking_payment", idempotency_key, data)
+        if existing_id is not None:
+            return _fetch_one(connection, "SELECT * FROM demo_payments WHERE id = %s", (existing_id,)) or {}
+        locked = _fetch_one(connection, "SELECT payment_status, booking_status FROM bookings WHERE id = %s FOR UPDATE", (booking["id"],))
+        if not locked or locked["booking_status"] == "cancelled":
+            raise ValueError("Cancelled or missing bookings cannot be paid")
+        existing = _fetch_one(connection, "SELECT * FROM demo_payments WHERE booking_id = %s ORDER BY id LIMIT 1", (booking["id"],))
+        if existing:
+            if idempotency_key:
+                _complete_idempotency(connection, user_id, "booking_payment", idempotency_key, int(existing["id"]))
+                return existing
+            raise ValueError("This booking is already paid")
+        reference = f"DEMO-{secrets.token_hex(6).upper()}"
+        payment_id = _insert_and_get_id(connection, """INSERT INTO demo_payments (booking_id, name, email, phone, tour_title, amount, payment_method, status, transaction_reference, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, 'paid', %s, %s)""", (booking["id"], customer["name"], customer["email"], customer.get("phone", ""), booking["tour_title"], float(booking["price"]) * int(booking["travellers"]), payment_method, reference, _utc_now()))
+        _execute(connection, "UPDATE bookings SET booking_status = 'confirmed', payment_status = 'paid', updated_at = %s WHERE id = %s", (_utc_now(), booking["id"]))
+        _complete_idempotency(connection, user_id, "booking_payment", idempotency_key, payment_id)
+        return _fetch_one(connection, "SELECT * FROM demo_payments WHERE id = %s", (payment_id,)) or {}
 
 
 def list_demo_payments() -> list[dict[str, Any]]:
