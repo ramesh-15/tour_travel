@@ -39,12 +39,16 @@ def _load_db_env() -> dict[str, str]:
 
 def _mysql_config() -> dict[str, Any]:
     values = _load_db_env()
+    def setting(name: str, fallback: str) -> str:
+        return os.getenv(name) or fallback
     config = {
-        "host": os.getenv("MYSQL_HOST", values.get("host", "localhost")),
-        "port": int(os.getenv("MYSQL_PORT", values.get("port", "3306"))),
-        "user": os.getenv("MYSQL_USER", values.get("username", "")),
-        "password": os.getenv("MYSQL_PASSWORD", values.get("password", "")),
-        "database": os.getenv("MYSQL_DATABASE", values.get("database_name", "")),
+        "host": setting("MYSQL_HOST", values.get("host", "localhost")),
+        "port": int(setting("MYSQL_PORT", values.get("port", "3306"))),
+        "user": setting("MYSQL_USER", values.get("username", "")),
+        "password": setting("MYSQL_PASSWORD", values.get("password", "")),
+        "database": setting("MYSQL_DATABASE", values.get("database_name", "")),
+        # Avoid native-driver compatibility issues on newer Python releases.
+        "use_pure": True,
     }
     if not config["user"] or not config["database"]:
         raise RuntimeError(

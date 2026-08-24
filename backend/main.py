@@ -23,7 +23,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 import db_models
-import cache
 import config
 
 
@@ -359,7 +358,7 @@ def startup() -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "database": db_models.health(), "redis": cache.status()}
+    return {"status": "ok", "database": db_models.health()}
 
 
 @app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
@@ -462,9 +461,7 @@ def list_tours(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=9, ge=1, le=100),
 ) -> PaginatedResponse[Tour]:
-    key = "tours:list:" + hashlib.sha256(json.dumps([page, page_size, city, mode, trip_type, category, search], default=str).encode()).hexdigest()
-    cached = cache.remember(key, lambda: db_models.paginate_public_tours(page, page_size, city, mode, trip_type, category, search))
-    items, total = cached
+    items, total = db_models.paginate_public_tours(page, page_size, city, mode, trip_type, category, search)
     return PaginatedResponse(items=[Tour(**tour) for tour in items], total=total, page=page, page_size=page_size)
 
 
@@ -480,7 +477,7 @@ def list_admin_tours(
 
 @app.get("/api/tours/{tour_id}", response_model=Tour)
 def get_tour(tour_id: int) -> Tour:
-    tour = cache.remember(f"tours:item:{tour_id}", lambda: db_models.get_tour(tour_id))
+    tour = db_models.get_tour(tour_id)
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
     return Tour(**tour)
@@ -577,7 +574,6 @@ def update_operations_tour_schedule(tour_id: int, data: TourScheduleUpdate, _: d
     tour = db_models.update_tour_schedule(tour_id, data.capacity, data.departure_date, data.guide_name)
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
-    cache.invalidate_tours()
     return Tour(**tour)
 
 
@@ -621,7 +617,6 @@ def update_staff_contact_enquiry(enquiry_id: int, data: ContactEnquiryUpdate, _:
 @app.post("/api/admin/tours", response_model=Tour, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_required)])
 def create_tour(data: TourInput) -> Tour:
     tour = Tour(**db_models.save_tour(data.model_dump(mode="json")))
-    cache.invalidate_tours()
     return tour
 
 
@@ -630,7 +625,6 @@ def update_tour(tour_id: int, data: TourInput) -> Tour:
     tour = db_models.save_tour(data.model_dump(mode="json"), tour_id)
     if not tour:
         raise HTTPException(status_code=404, detail="Tour not found")
-    cache.invalidate_tours()
     return Tour(**tour)
 
 
@@ -638,7 +632,6 @@ def update_tour(tour_id: int, data: TourInput) -> Tour:
 def delete_tour(tour_id: int) -> None:
     if not db_models.delete_tour(tour_id):
         raise HTTPException(status_code=404, detail="Tour not found")
-    cache.invalidate_tours()
 
 
 @app.get("/api/admin/users", response_model=list[Account], dependencies=[Depends(admin_required)])
