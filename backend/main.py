@@ -53,7 +53,14 @@ ADMIN_USERNAME = config.ADMIN_USERNAME
 ADMIN_PASSWORD = config.ADMIN_PASSWORD
 JWT_SECRET = config.JWT_SECRET
 JWT_EXPIRY_HOURS = 8
-TripType = Literal["One-day trip", "Weekly trip"]
+TripType = Literal[
+    "Morning trip",
+    "Evening trip",
+    "Half-day trip",
+    "One-day trip",
+    "Weekly trip",
+    "Festival special",
+]
 UserRole = Literal["customer", "admin", "operations", "support"]
 BookingStatus = Literal["pending", "confirmed", "cancelled", "completed"]
 PaymentStatus = Literal["unpaid", "paid", "refunded"]

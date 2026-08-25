@@ -30,7 +30,7 @@ const fallbackTours = []
 ]
 */
 
-const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const apiBaseUrl = import.meta.env.VITE_API_URL
 const businessWhatsAppNumber = '919876543210'
 
 function requiresCustomerAuth(destination) {
@@ -714,6 +714,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     title: tour?.title || '', description: tour?.description || '', image_url: tour?.image_url || '',
     city: tour?.city || 'Mumbai', mode: tour?.mode || 'Shared', trip_type: tour?.trip_type || 'One-day trip',
     category: tour?.category || '', duration: tour?.duration || '', price: tour?.price || '',
+    capacity: tour?.capacity || 20, departure_date: tour?.departure_date || '', guide_name: tour?.guide_name || '',
     highlights: (tour?.highlights || []).join(', '), tag: tour?.tag || '', featured: tour?.featured || false,
     dark: tour?.dark || false, published: tour?.published ?? true,
   }))
@@ -725,7 +726,14 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     event.preventDefault()
     setSaving(true)
     setStatus('')
-    const payload = { ...form, price: Number(form.price), highlights: form.highlights.split(',').map(item => item.trim()).filter(Boolean) }
+    const payload = {
+      ...form,
+      price: Number(form.price),
+      capacity: Number(form.capacity),
+      departure_date: form.departure_date || null,
+      guide_name: form.guide_name.trim() || null,
+      highlights: form.highlights.split(',').map(item => item.trim()).filter(Boolean),
+    }
     try {
       if (imageFile) {
         const uploadData = new FormData()
@@ -755,7 +763,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       setSaving(false)
     }
   }
-  return <main className="top-space"><section className="section admin-editor"><div className="admin-heading"><div><Eyebrow>Private management</Eyebrow><h1>{tour ? 'Edit tour' : 'Add a tour'}</h1><p className="lead">Tours are bookable experiences. The trip type controls where they appear under Trips.</p></div><button className="text-button" onClick={onCancel}>Back to dashboard</button></div><form className="contact-form admin-form" onSubmit={submit}><label>Tour title<input required value={form.title} onChange={event => update('title', event.target.value)} /></label><label>City<select value={form.city} onChange={event => update('city', event.target.value)}><option>Mumbai</option><option>Delhi</option><option>Hyderabad</option></select></label><label>Trip type<select value={form.trip_type} onChange={event => update('trip_type', event.target.value)}><option>One-day trip</option><option>Weekly trip</option></select></label><label>Tour format<select value={form.mode} onChange={event => update('mode', event.target.value)}><option>Shared</option><option>Private</option></select></label><label>Description<textarea required rows="4" value={form.description} onChange={event => update('description', event.target.value)} /></label><label>Tour image<input required={!tour} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setImageFile(event.target.files?.[0] || null)} /><small>{imageFile ? imageFile.name : tour ? 'Leave empty to keep the current image.' : 'JPEG, PNG, or WebP, up to 5 MB.'}</small></label><label>Category<input required value={form.category} onChange={event => update('category', event.target.value)} placeholder="Heritage, Food, Culture..." /></label><label>Duration<input required value={form.duration} onChange={event => update('duration', event.target.value)} placeholder="5 hours or 7 days" /></label><label>Price per person (INR)<input required type="number" min="1" step="1" value={form.price} onChange={event => update('price', event.target.value)} /></label><label>Highlights <small>(comma-separated)</small><input value={form.highlights} onChange={event => update('highlights', event.target.value)} /></label><label>Badge <small>(optional)</small><input value={form.tag} onChange={event => update('tag', event.target.value)} /></label><label><input type="checkbox" checked={form.featured} onChange={event => update('featured', event.target.checked)} /> Feature this tour</label><label><input type="checkbox" checked={form.dark} onChange={event => update('dark', event.target.checked)} /> Use dark booking button</label><label><input type="checkbox" checked={form.published} onChange={event => update('published', event.target.checked)} /> Publish immediately</label><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : tour ? 'Update tour' : 'Save tour'}</button>{status && <p>{status}</p>}</form></section></main>
+  return <main className="top-space"><section className="section admin-editor"><div className="admin-heading"><div><Eyebrow>Private management</Eyebrow><h1>{tour ? 'Edit tour' : 'Add a tour'}</h1><p className="lead">Add every detail travellers need to make a confident booking.</p></div><button className="text-button" onClick={onCancel}>Back to dashboard</button></div><form className="contact-form admin-form" onSubmit={submit}><label>Tour title<input required value={form.title} onChange={event => update('title', event.target.value)} /></label><label>City<select value={form.city} onChange={event => update('city', event.target.value)}><option>Mumbai</option><option>Delhi</option><option>Hyderabad</option></select></label><label>Trip type<select value={form.trip_type} onChange={event => update('trip_type', event.target.value)}><option>Morning trip</option><option>Evening trip</option><option>Half-day trip</option><option>One-day trip</option><option>Weekly trip</option><option>Festival special</option></select></label><label>Experience mode<input required value={form.mode} onChange={event => update('mode', event.target.value)} placeholder="Car + Walking, Bicycle, Shared..." /></label><label>Description<textarea required rows="4" value={form.description} onChange={event => update('description', event.target.value)} /></label><label>Tour image<input required={!tour} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setImageFile(event.target.files?.[0] || null)} /><small>{imageFile ? imageFile.name : tour ? 'Leave empty to keep the current image.' : 'JPEG, PNG, or WebP, up to 5 MB.'}</small></label><label>Category<input required value={form.category} onChange={event => update('category', event.target.value)} placeholder="City Sightseeing, Food & Culture..." /></label><label>Duration<input required value={form.duration} onChange={event => update('duration', event.target.value)} placeholder="4 hours" /></label><label>Price per person (INR)<input required type="number" min="1" step="1" value={form.price} onChange={event => update('price', event.target.value)} /></label><label>Group capacity<input required type="number" min="1" max="500" value={form.capacity} onChange={event => update('capacity', event.target.value)} /></label><label>Departure date <small>(optional)</small><input type="date" value={form.departure_date} onChange={event => update('departure_date', event.target.value)} /></label><label>Lead guide <small>(optional)</small><input value={form.guide_name} onChange={event => update('guide_name', event.target.value)} placeholder="Aarav Mehta" /></label><label>Highlights <small>(comma-separated)</small><input value={form.highlights} onChange={event => update('highlights', event.target.value)} placeholder="Gateway of India, Marine Drive..." /></label><label>Badge <small>(optional)</small><input value={form.tag} onChange={event => update('tag', event.target.value)} placeholder="Best Seller" /></label><label><input type="checkbox" checked={form.featured} onChange={event => update('featured', event.target.checked)} /> Feature this tour</label><label><input type="checkbox" checked={form.dark} onChange={event => update('dark', event.target.checked)} /> Use dark booking button</label><label><input type="checkbox" checked={form.published} onChange={event => update('published', event.target.checked)} /> Publish immediately</label><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : tour ? 'Update tour' : 'Save tour'}</button>{status && <p>{status}</p>}</form></section></main>
 }
 
 function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
