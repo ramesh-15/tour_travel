@@ -19,6 +19,8 @@ backend/.env
 backend/db.env
 docker.env
 droplet_ssh
+githubdeploykey
+githubdeploykey.pub
 backend/.venv/
 
 # Editor directories and files
