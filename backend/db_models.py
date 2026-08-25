@@ -18,7 +18,7 @@ from mysql.connector.connection import MySQLConnection
 DB_ENV_PATH = Path(__file__).with_name("db.env")
 TOUR_COLUMNS = (
     "title", "description", "image_url", "city", "mode", "trip_type", "category", "duration",
-    "price", "capacity", "departure_date", "guide_name", "highlights", "tag", "featured", "dark", "published",
+    "price", "capacity", "schedule_type", "departure_date", "start_time", "guide_name", "highlights", "tag", "featured", "dark", "published",
 )
 
 
@@ -152,7 +152,9 @@ def initialize_database() -> None:
             duration VARCHAR(80) NOT NULL,
             price DECIMAL(12, 2) NOT NULL,
             capacity SMALLINT NOT NULL DEFAULT 20 CHECK (capacity >= 1),
+            schedule_type VARCHAR(20) NOT NULL DEFAULT 'Specific date',
             departure_date DATE NULL,
+            start_time VARCHAR(5) NULL,
             guide_name VARCHAR(120) NULL,
             highlights JSON NOT NULL,
             tag VARCHAR(40) NULL,
@@ -280,7 +282,9 @@ def initialize_database() -> None:
         for table, column, definition in (
             ("tours", "trip_type", "VARCHAR(20) NOT NULL DEFAULT 'One-day trip'"),
             ("tours", "capacity", "SMALLINT NOT NULL DEFAULT 20"),
+            ("tours", "schedule_type", "VARCHAR(20) NOT NULL DEFAULT 'Specific date'"),
             ("tours", "departure_date", "DATE NULL"),
+            ("tours", "start_time", "VARCHAR(5) NULL"),
             ("tours", "guide_name", "VARCHAR(120) NULL"),
             ("users", "username", "VARCHAR(80) NULL"),
             ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),

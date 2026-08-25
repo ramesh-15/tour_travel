@@ -61,6 +61,7 @@ TripType = Literal[
     "Weekly trip",
     "Festival special",
 ]
+ScheduleType = Literal["Daily", "Specific date"]
 UserRole = Literal["customer", "admin", "operations", "support"]
 BookingStatus = Literal["pending", "confirmed", "cancelled", "completed"]
 PaymentStatus = Literal["unpaid", "paid", "refunded"]
@@ -78,7 +79,9 @@ class TourInput(BaseModel):
     duration: str = Field(min_length=2, max_length=80)
     price: float = Field(gt=0, le=10_000_000)
     capacity: int = Field(default=20, ge=1, le=500)
+    schedule_type: ScheduleType = "Specific date"
     departure_date: date | None = None
+    start_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     guide_name: str | None = Field(default=None, max_length=120)
     highlights: list[str] = Field(default_factory=list, max_length=12)
     tag: str | None = Field(default=None, max_length=40)
