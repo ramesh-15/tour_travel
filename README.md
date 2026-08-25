@@ -95,3 +95,32 @@ npm.cmd run lint
 ```
 
 See [backend/README.md](backend/README.md) for API setup, SQLite storage, CORS, and endpoint details.
+
+## GitHub Actions CI/CD
+
+The workflow at `.github/workflows/ci-cd.yml` runs frontend linting and builds,
+then checks that the Python backend compiles for every pull request and push to
+`nomad`. A successful push to `nomad` deploys to a Docker host using SSH.
+
+Create a GitHub Environment named `production`, then add these environment
+secrets:
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | Server IP address or hostname |
+| `DEPLOY_USER` | SSH user on the server |
+| `DEPLOY_PATH` | Absolute path to this cloned repository on the server |
+| `DEPLOY_SSH_KEY` | Private SSH deploy key (the full multiline key) |
+| `DEPLOY_KNOWN_HOSTS` | The server host key, for example output from `ssh-keyscan -H your-server` verified against your provider |
+
+Before the first deployment, clone this repository on the server at
+`DEPLOY_PATH`, create the ignored `docker.env` and `backend/.env` files there,
+and confirm Docker Compose works by running:
+
+```sh
+docker compose --env-file docker.env up --build --detach
+```
+
+Add the public half of `DEPLOY_SSH_KEY` to the deploy user's
+`~/.ssh/authorized_keys`. That user must be allowed to run Docker Compose. Do
+not commit private keys, `docker.env`, or backend environment files.

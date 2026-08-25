@@ -18,6 +18,7 @@ backend/__pycache__/
 backend/.env
 backend/db.env
 docker.env
+droplet_ssh
 backend/.venv/
 
 # Editor directories and files
