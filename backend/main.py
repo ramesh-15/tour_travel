@@ -19,6 +19,7 @@ from typing import Generic, Literal, TypeVar
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -311,10 +312,17 @@ def validate_access_token(token: str) -> dict[str, object]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired access token") from None
 
 
-def authenticated_account(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    if not authorization or not authorization.startswith("Bearer "):
+bearer_security = HTTPBearer(
+    scheme_name="JWT Bearer",
+    bearerFormat="JWT",
+    description="Paste the JWT access token returned by an auth login endpoint. Do not include the `Bearer ` prefix.",
+)
+
+
+def authenticated_account(credentials: HTTPAuthorizationCredentials = Depends(bearer_security)) -> dict[str, object]:
+    if credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token required")
-    claims = validate_access_token(authorization.removeprefix("Bearer "))
+    claims = validate_access_token(credentials.credentials)
     if claims.get("role") == "admin" and claims.get("sub") == ADMIN_USERNAME:
         return {"id": None, "name": "Administrator", "email": "", "role": "admin", "is_active": True, "legacy_admin": True}
     try:
@@ -442,20 +450,16 @@ def update_current_account(data: AccountUpdate, user: dict[str, object] = Depend
 
 
 @app.post("/api/auth/logout")
-def logout_account(authorization: str | None = Header(default=None)) -> dict[str, str]:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token required")
-    token = authorization.removeprefix("Bearer ")
+def logout_account(credentials: HTTPAuthorizationCredentials = Depends(bearer_security)) -> dict[str, str]:
+    token = credentials.credentials
     claims = validate_access_token(token)
     db_models.revoke_token(token, int(claims["exp"]))
     return {"message": "Logged out"}
 
 
 @app.post("/api/admin/logout")
-def logout(authorization: str | None = Header(default=None)) -> dict[str, str]:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token required")
-    token = authorization.removeprefix("Bearer ")
+def logout(credentials: HTTPAuthorizationCredentials = Depends(bearer_security)) -> dict[str, str]:
+    token = credentials.credentials
     claims = validate_access_token(token)
     db_models.revoke_token(token, int(claims["exp"]))
     return {"message": "Logged out"}
@@ -624,10 +628,17 @@ def update_staff_contact_enquiry(enquiry_id: int, data: ContactEnquiryUpdate, _:
     return ContactEnquiry(**enquiry)
 
 
-@app.post("/api/admin/tours", response_model=Tour, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_required)])
-def create_tour(data: TourInput) -> Tour:
-    tour = Tour(**db_models.save_tour(data.model_dump(mode="json")))
-    return tour
+@app.post(
+    "/api/admin/tours",
+    response_model=Tour | list[Tour],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(admin_required)],
+)
+def create_tour(data: TourInput | list[TourInput]) -> Tour | list[Tour]:
+    """Create one tour object or bulk-create a JSON list of tour objects."""
+    if isinstance(data, list):
+        return [Tour(**db_models.save_tour(item.model_dump(mode="json"))) for item in data]
+    return Tour(**db_models.save_tour(data.model_dump(mode="json")))
 
 
 @app.put("/api/admin/tours/{tour_id}", response_model=Tour, dependencies=[Depends(admin_required)])
