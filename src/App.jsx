@@ -699,7 +699,12 @@ function AdminReportPanel({ report }) {
 }
 
 function AdminCollectionToolbar({ value, onChange, label, count }) {
-  return <div className="admin-collection-toolbar"><label><span className="material-symbols-outlined">search</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={`Search ${label.toLowerCase()}...`} aria-label={`Search ${label}`} /></label><span>{count} result{count === 1 ? '' : 's'}</span></div>
+  const [tourView, setTourView] = useState('grid')
+  const changeTourView = (nextView) => {
+    setTourView(nextView)
+    document.querySelector('.admin-dashboard')?.classList.toggle('admin-tour-row-mode', nextView === 'rows')
+  }
+  return <div className="admin-collection-toolbar"><label><span className="material-symbols-outlined">search</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={`Search ${label.toLowerCase()}...`} aria-label={`Search ${label}`} /></label><div className="admin-toolbar-end"><span>{count} result{count === 1 ? '' : 's'}</span>{label === 'Tours' && <div className="admin-view-toggle" aria-label="Tour display style"><button className={tourView === 'grid' ? 'active' : ''} onClick={() => changeTourView('grid')} title="Card grid view" aria-label="Card grid view"><span className="material-symbols-outlined">grid_view</span></button><button className={tourView === 'rows' ? 'active' : ''} onClick={() => changeTourView('rows')} title="Table row view" aria-label="Table row view"><span className="material-symbols-outlined">table_rows</span></button></div>}</div></div>
 }
 
 function AdminPagination({ page, totalPages, totalItems, pageSize, onChange }) {
