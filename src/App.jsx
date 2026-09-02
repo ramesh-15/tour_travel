@@ -481,7 +481,11 @@ function App() {
   ) : path === "/tours/festival" ? (
     <ToursV3 go={go} city="" category="Festival" />
   ) : path === "/tours" ? (
-    new URLSearchParams(query).get("view") === "detail" ? (
+    new URLSearchParams(query).get("view") === "detail" && tours.some(
+      (tour) =>
+        tour.city === (new URLSearchParams(query).get("city") || "") &&
+        tour.category === (new URLSearchParams(query).get("category") || ""),
+    ) ? (
       <Dharavi
         go={go}
         tours={tours}
@@ -492,17 +496,21 @@ function App() {
       <ToursV3
         go={go}
         city={new URLSearchParams(query).get("city") || ""}
-        category={new URLSearchParams(query).get("category") || ""}
+        category={
+          new URLSearchParams(query).get("view") === "detail"
+            ? ""
+            : new URLSearchParams(query).get("category") || ""
+        }
       />
     )
   ) : path === "/trips/one-day" ? (
     <TripsPageV2 go={go} type="one-day" />
   ) : path === "/trips/weekly" ? (
     <TripsPageV2 go={go} type="weekly" />
-  ) : path === "/tours/dharavi" && tours.some((tour) => /dharavi/i.test(tour.title) || tour.category === "Community") ? (
+  ) : path === "/tours/dharavi" && tours.some((tour) => tour.city === "Mumbai" && tour.category === "Community") ? (
     <Dharavi go={go} tours={tours} />
   ) : path === "/tours/dharavi" ? (
-    <ToursV3 go={go} city="Mumbai" category="Community" />
+    <ToursV3 go={go} city="Mumbai" />
   ) : /^\/tours\/\d+$/.test(path) ? (
     <Dharavi go={go} tours={tours} tourId={Number(path.split("/").pop())} />
   ) : path === "/payment" ? (
