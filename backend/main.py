@@ -30,11 +30,13 @@ import config
 ENV_PATH = Path(__file__).with_name(".env")
 TOUR_UPLOADS_PATH = Path(__file__).with_name("uploads") / "tours"
 MAX_TOUR_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_TOUR_VIDEO_BYTES = 100 * 1024 * 1024
 TOUR_IMAGE_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
 }
+TOUR_VIDEO_TYPES = {"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov"}
 
 
 def load_environment_file() -> None:
@@ -85,6 +87,13 @@ class TourInput(BaseModel):
     start_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     guide_name: str | None = Field(default=None, max_length=120)
     highlights: list[str] = Field(default_factory=list, max_length=12)
+    inclusions: list[str] = Field(default_factory=list, max_length=12)
+    gallery_images: list[str] = Field(default_factory=list, max_length=10)
+    faq_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+    review_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+    meeting_details: str = Field(default="", max_length=2000)
+    traveller_video_url: str | None = Field(default=None, max_length=2048)
+    private_price: float | None = Field(default=None, gt=0, le=10_000_000)
     tag: str | None = Field(default=None, max_length=40)
     featured: bool = False
     dark: bool = False
@@ -96,6 +105,10 @@ class Tour(TourInput):
     id: int
     created_at: datetime
     updated_at: datetime
+
+
+class TourBulkDelete(BaseModel):
+    tour_ids: list[int] = Field(min_length=1, max_length=100)
 
 
 class PaginatedResponse(BaseModel, Generic[ResponseItem]):
@@ -398,6 +411,23 @@ async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
     return {"image_url": f"{base_url}/uploads/tours/{filename}"}
 
 
+@app.post("/api/admin/tour-videos", dependencies=[Depends(admin_required)])
+async def upload_tour_video(video: UploadFile = File(...)) -> dict[str, str]:
+    """Store an admin-uploaded traveller-experience video."""
+    extension = TOUR_VIDEO_TYPES.get(video.content_type or "")
+    if not extension:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Upload an MP4, WebM, or MOV video.")
+    contents = await video.read(MAX_TOUR_VIDEO_BYTES + 1)
+    if not contents:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The video file is empty.")
+    if len(contents) > MAX_TOUR_VIDEO_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Video files must be 100 MB or smaller.")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    (TOUR_UPLOADS_PATH / filename).write_bytes(contents)
+    base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
+    return {"video_url": f"{base_url}/uploads/tours/{filename}"}
+
+
 @app.get("/api/admin/me")
 def get_admin_profile(account: dict[str, object] = Depends(admin_required)) -> dict[str, str]:
     return {
@@ -653,6 +683,12 @@ def update_tour(tour_id: int, data: TourInput) -> Tour:
 def delete_tour(tour_id: int) -> None:
     if not db_models.delete_tour(tour_id):
         raise HTTPException(status_code=404, detail="Tour not found")
+
+
+@app.delete("/api/admin/tours", dependencies=[Depends(admin_required)])
+def delete_tours(data: TourBulkDelete) -> dict[str, int]:
+    deleted = db_models.delete_tours(data.tour_ids)
+    return {"deleted": deleted}
 
 
 @app.get("/api/admin/users", response_model=list[Account], dependencies=[Depends(admin_required)])

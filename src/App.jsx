@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import delhiIndiaGate from "./assets/delhi-india-gate.png";
 import roadTripCar from "./assets/road-trip-car.png";
+import footerCitySkyline from "./assets/footer-city-skyline.png";
 import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
@@ -395,7 +396,7 @@ function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/tours`)
+    fetch(`${apiBaseUrl}/api/tours?page_size=100`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) => {
         setTours(data.items.map(apiTourToUi));
@@ -480,13 +481,30 @@ function App() {
   ) : path === "/tours/festival" ? (
     <ToursV3 go={go} city="" category="Festival" />
   ) : path === "/tours" ? (
-    <ToursV3 go={go} city={new URLSearchParams(query).get("city") || ""} />
+    new URLSearchParams(query).get("view") === "detail" ? (
+      <Dharavi
+        go={go}
+        tours={tours}
+        city={new URLSearchParams(query).get("city") || ""}
+        category={new URLSearchParams(query).get("category") || ""}
+      />
+    ) : (
+      <ToursV3
+        go={go}
+        city={new URLSearchParams(query).get("city") || ""}
+        category={new URLSearchParams(query).get("category") || ""}
+      />
+    )
   ) : path === "/trips/one-day" ? (
     <TripsPageV2 go={go} type="one-day" />
   ) : path === "/trips/weekly" ? (
     <TripsPageV2 go={go} type="weekly" />
+  ) : path === "/tours/dharavi" && tours.some((tour) => /dharavi/i.test(tour.title) || tour.category === "Community") ? (
+    <Dharavi go={go} tours={tours} />
   ) : path === "/tours/dharavi" ? (
-    <Dharavi go={go} />
+    <ToursV3 go={go} city="Mumbai" category="Community" />
+  ) : /^\/tours\/\d+$/.test(path) ? (
+    <Dharavi go={go} tours={tours} tourId={Number(path.split("/").pop())} />
   ) : path === "/payment" ? (
     <DummyPayment session={userSession} />
   ) : path === "/contact" ? (
@@ -508,6 +526,7 @@ function App() {
         <Header
           path={path}
           go={go}
+          tours={tours}
           userSession={userSession}
           onUserLogout={userSession ? logoutUser : null}
           onStaffLogout={path === "/staff" && staffSession ? logoutStaff : null}
@@ -546,12 +565,15 @@ function App() {
 function Header({
   path,
   go,
+  tours,
   userSession,
   onUserLogout,
   onStaffLogout,
   onAdminLogout,
 }) {
   const [toursOpen, setToursOpen] = useState(false);
+  const [mumbaiToursOpen, setMumbaiToursOpen] = useState(false);
+  const [delhiToursOpen, setDelhiToursOpen] = useState(false);
   const [tripsOpen, setTripsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -678,6 +700,8 @@ function Header({
     );
   const selectTour = (destination) => {
     setToursOpen(false);
+    setMumbaiToursOpen(false);
+    setDelhiToursOpen(false);
     go(destination);
   };
   const selectTrip = (destination) => {
@@ -689,7 +713,44 @@ function Header({
     go(destination);
   };
   return (
-    <header className="site-header">
+    <header className="site-header public-header">
+      <div className="contact-bar">
+        <div className="contact-bar-inner">
+          <div className="contact-bar-details">
+            <a href="tel:+919876543210">
+              <span className="material-symbols-outlined" aria-hidden="true">call</span>
+              +91 98765 43210
+            </a>
+            <a href="mailto:hello@nomadwanderers.in">
+              <span className="material-symbols-outlined" aria-hidden="true">mail</span>
+              hello@nomadwanderers.in
+            </a>
+            <span className="contact-bar-item">
+              <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
+              Mumbai
+            </span>
+            {/* <span className="contact-bar-impact">
+              <span className="material-symbols-outlined" aria-hidden="true">volunteer_activism</span>
+              Ethical, authentic tours since 2012
+            </span> */}
+          </div>
+          <div className="contact-bar-actions">
+            <button className="contact-bar-search" onClick={() => go("/tours")} aria-label="Search tours">
+              <span>Search tours...</span>
+              <span className="material-symbols-outlined" aria-hidden="true">search</span>
+            </button>
+            <div className="contact-bar-socials" aria-label="Social media links">
+              <a href="https://www.facebook.com/mudavath.ramesh.841066/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Facebook">f</a>
+              <a href="https://www.instagram.com/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Instagram">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 2h9.6A5.2 5.2 0 0 1 22 7.2v9.6a5.2 5.2 0 0 1-5.2 5.2H7.2A5.2 5.2 0 0 1 2 16.8V7.2A5.2 5.2 0 0 1 7.2 2Zm-.17 2A3.03 3.03 0 0 0 4 7.03v9.94A3.03 3.03 0 0 0 7.03 20h9.94A3.03 3.03 0 0 0 20 16.97V7.03A3.03 3.03 0 0 0 16.97 4H7.03Zm9.25 1.5a1.22 1.22 0 1 1 0 2.44 1.22 1.22 0 0 1 0-2.44ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" /></svg>
+              </a>
+              <a href="https://www.youtube.com/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on YouTube">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.12C19.55 3.58 12 3.58 12 3.58s-7.55 0-9.4.5A3 3 0 0 0 .5 6.2 31.15 31.15 0 0 0 0 12a31.15 31.15 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.12c1.85.5 9.4.5 9.4.5s7.55 0 9.4-.5a3 3 0 0 0 2.1-2.12A31.15 31.15 0 0 0 24 12a31.15 31.15 0 0 0-.5-5.8ZM9.6 15.55v-7.1L15.85 12 9.6 15.55Z" /></svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
       <nav>
         <button className="brand" onClick={() => go("/")}>
           Nomad Wanderers
@@ -699,13 +760,23 @@ function Header({
           <div
             className="tours-menu"
             onMouseEnter={() => setToursOpen(true)}
-            onMouseLeave={() => setToursOpen(false)}
+            onMouseLeave={() => {
+              setToursOpen(false);
+              setMumbaiToursOpen(false);
+              setDelhiToursOpen(false);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setToursOpen(false);
+                setMumbaiToursOpen(false);
+                setDelhiToursOpen(false);
+              }
+            }}
           >
             <button
               className={`nav-link tours-trigger ${path.startsWith("/tours") ? "active" : ""}`}
               onClick={() => selectTour("/tours")}
               onFocus={() => setToursOpen(true)}
-              onBlur={() => setToursOpen(false)}
               aria-expanded={toursOpen}
               aria-haspopup="true"
             >
@@ -714,12 +785,41 @@ function Header({
             </button>
             {toursOpen && (
               <div className="tours-dropdown">
-                <button onClick={() => selectTour("/tours?city=Mumbai")}>
-                  Mumbai
-                </button>
-                <button onClick={() => selectTour("/tours?city=Delhi")}>
-                  Delhi
-                </button>
+                <div
+                  className="nested-tour-menu"
+                  onMouseEnter={() => setMumbaiToursOpen(true)}
+                  onMouseLeave={() => setMumbaiToursOpen(false)}
+                >
+                  <button onClick={() => selectTour("/tours?city=Mumbai")} aria-expanded={mumbaiToursOpen}>
+                    Mumbai <span className="material-symbols-outlined">chevron_right</span>
+                  </button>
+                  {mumbaiToursOpen && (
+                    <div className="nested-tour-dropdown">
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Community&view=detail")}>Dharavi community tour</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Sightseeing&view=detail")}>Mumbai sightseeing</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Local%20Life&view=detail")}>Unique experiences</button>
+                    </div>
+                  )}
+                </div>
+                <div
+                  className="nested-tour-menu"
+                  onMouseEnter={() => setDelhiToursOpen(true)}
+                  onMouseLeave={() => setDelhiToursOpen(false)}
+                >
+                  <button
+                    onClick={() => selectTour("/tours?city=Delhi")}
+                    aria-expanded={delhiToursOpen}
+                  >
+                    Delhi <span className="material-symbols-outlined">chevron_right</span>
+                  </button>
+                  {delhiToursOpen && (
+                    <div className="nested-tour-dropdown">
+                      <button onClick={() => selectTour("/tours?city=Delhi&category=City&view=detail")}>Delhi city discovery</button>
+                      <button onClick={() => selectTour("/tours?city=Delhi&category=Heritage&view=detail")}>Heritage walks</button>
+                      <button onClick={() => selectTour("/tours?city=Delhi&category=Food&view=detail")}>Food & bazaar trails</button>
+                    </div>
+                  )}
+                </div>
                 <span className="dropdown-divider" />
                 <button onClick={() => selectTour("/tours/festival")}>
                   Festival Tours
@@ -731,11 +831,15 @@ function Header({
             className="trips-menu"
             onMouseEnter={() => setTripsOpen(true)}
             onMouseLeave={() => setTripsOpen(false)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setTripsOpen(false);
+              }
+            }}
           >
             <button
               className={`nav-link trips-trigger ${path.startsWith("/trips") ? "active" : ""}`}
               onFocus={() => setTripsOpen(true)}
-              onBlur={() => setTripsOpen(false)}
               aria-expanded={tripsOpen}
               aria-haspopup="true"
             >
@@ -757,6 +861,17 @@ function Header({
           </div>
           {link("About", "/", false)}
           {link("Contact", "/contact", path === "/contact")}
+        </div>
+        <div className="mobile-quick-actions" aria-label="Quick contact actions">
+          <button onClick={() => go("/tours")} aria-label="Search tours">
+            <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          </button>
+          <a href="tel:+919876543210" aria-label="Call Nomad Wanderers">
+            <span className="material-symbols-outlined" aria-hidden="true">call</span>
+          </a>
+          <a href="mailto:hello@nomadwanderers.in" aria-label="Email Nomad Wanderers">
+            <span className="material-symbols-outlined" aria-hidden="true">mail</span>
+          </a>
         </div>
         {userSession ? (
           <div className="profile-nav-menu" ref={profileMenuRef}>
@@ -916,19 +1031,34 @@ function CTA({
 function About({ go }) {
   const principles = [
     [
+      "verified",
+      "Authenticity",
+      "We create experiences that go beyond the usual tourist trail, offering genuine insights into India's people, places, and everyday life.",
+    ],
+    [
+      "location_on",
+      "Local Expertise",
+      "Our passionate local guides bring every destination to life with their knowledge, personal stories, and deep connection to the communities they call home.",
+    ],
+    [
       "diversity_3",
-      "Local knowledge, not a script",
-      "Every walk begins with the people, neighbourhoods, and small details that make a place feel alive.",
+      "Cultural Respect",
+      "We celebrate India's rich diversity through meaningful, respectful exchanges with its traditions, food, and communities.",
     ],
     [
       "volunteer_activism",
-      "Respect before access",
-      "We design experiences that value communities and keep photography, conversation, and curiosity considerate.",
+      "Community First",
+      "We believe tourism should benefit the people who make each destination unique by supporting local businesses, artisans, and communities.",
     ],
     [
-      "map",
-      "Room to wander",
-      "Our routes have a shape, but never a stopwatch. There is time for questions, chai, and the unexpected.",
+      "eco",
+      "Responsible Tourism",
+      "We are committed to preserving India's cultural and natural heritage while promoting sustainable and ethical tourism practices.",
+    ],
+    [
+      "handshake",
+      "Trust & Transparency",
+      "From your first inquiry to the end of your journey, we deliver reliable service, transparent communication, and memorable experiences.",
     ],
   ];
   return (
@@ -982,11 +1112,11 @@ function About({ go }) {
       </section>
       <section className="section about-principles">
         <div className="section-heading">
-          <Eyebrow>What guides us</Eyebrow>
-          <h2>Good travel is a conversation.</h2>
+          <Eyebrow>Our core values</Eyebrow>
+          <h2>Why Choose Nomad Wanderers?</h2>
           <p className="lead">
-            We believe memorable journeys are generous with time, grounded in
-            place, and respectful of the people who call a destination home.
+            Thoughtful travel starts with real connection, respect, and people
+            who know every place by heart.
           </p>
         </div>
         <div className="about-principle-grid">
@@ -1128,18 +1258,33 @@ function Home({ go }) {
   const values = [
     [
       "verified",
-      "12 Years Experience",
-      "A decade of professional guiding has allowed us to perfect the balance between iconic sights and secret local spots.",
+      "Authenticity",
+      "We create experiences that go beyond the usual tourist trail, offering genuine insights into India's people, places, and everyday life.",
     ],
     [
       "location_on",
-      "Dharavi Perspective",
-      "Experience Dharavi through the eyes of a resident. We provide an authentic, respectful, and enlightening look at Mumbai's heart.",
+      "Local Expertise",
+      "Our passionate local guides bring every destination to life with their knowledge, personal stories, and deep connection to the communities they call home.",
     ],
     [
-      "workspace_premium",
-      "Professional Service",
-      "Safety, comfort, and reliability are our pillars. Every tour is curated to ensure a seamless and memorable adventure.",
+      "diversity_3",
+      "Cultural Respect",
+      "We celebrate India's rich diversity by encouraging meaningful, respectful, and immersive cultural exchanges with every experience.",
+    ],
+    [
+      "volunteer_activism",
+      "Community First",
+      "We believe tourism should benefit the people who make each destination unique by supporting local businesses, artisans, and communities.",
+    ],
+    [
+      "eco",
+      "Responsible Tourism",
+      "We are committed to preserving India's cultural and natural heritage while promoting sustainable and ethical tourism practices.",
+    ],
+    [
+      "handshake",
+      "Trust & Transparency",
+      "From your first inquiry to the end of your journey, we are dedicated to reliable service, transparent communication, and memorable experiences.",
     ],
   ];
   return (
@@ -1163,10 +1308,27 @@ function Home({ go }) {
             <em>wherever you wander.</em>
           </h1>
           <p>
-            Nomad Wanderers creates thoughtful, locally led experiences for
-            travellers who want more than a checklist. With over 12 years of
-            guiding, we bring you closer to India through its people, places,
-            flavours and small, unforgettable moments.
+            At Nomad Wanderers, we believe travel is about more than visiting
+            landmarks—it's about connecting with the people, stories, and
+            everyday life that make India extraordinary. Founded by a passionate
+            local guide with years of experience hosting travellers from around
+            the world, we create experiences that go beyond guidebooks,
+            combining iconic sights with hidden gems, authentic food, cultural
+            encounters, and local perspectives.
+          </p>
+          <p>
+            From the snow-capped valleys of Kashmir in the north to the tranquil
+            backwaters of Kerala in the south, from the vibrant landscapes of
+            Gujarat in the west to the rich cultures of Assam in the northeast,
+            our vision is to showcase the incredible diversity of India through
+            thoughtfully curated journeys.
+          </p>
+          <p>
+            Every experience is rooted in genuine local connections and designed
+            to offer a deeper understanding of the places we visit. We don't
+            just help you see India as a visitor—we invite you to experience it
+            through the eyes of the people who call it home, creating journeys
+            that are immersive, meaningful, and truly memorable.
           </p>
           <button className="primary-button" onClick={() => go("/tours")}>
             Explore our experiences <span>→</span>
@@ -1332,30 +1494,40 @@ function Home({ go }) {
           <Eyebrow>The Heart of Nomad Wanderers</Eyebrow>
           <h2>Our Story</h2>
           <p>
-            Nomad Wanderers is the culmination of Raj's 12-year journey through
-            the heart of Mumbai. Born and raised in this vibrant metropolis, Raj
-            began his career as a professional guide, driven by a deep love for
-            his city and a desire to share its untold stories.
+            Nomad Wanderers began with a simple idea—to share the real India
+            through the eyes of those who call it home. Founded by Rajesh,
+            better known as Raj, who was born and raised in Dharavi, Mumbai,
+            the journey started with a passion for introducing travellers to
+            his community beyond stereotypes and headlines.
           </p>
           <p>
-            Today, Nomad Wanderers has evolved from an individual passion into a
-            dedicated tour company. Raj has poured his heart into building an
-            organization that offers authentic, expert-led journeys that go
-            beyond the guidebooks, ensuring every guest experiences the soul of
-            India through the eyes of those who know it best.
+            Over the past 12+ years, that passion has grown into a deep
+            understanding of India's history, culture, and diverse traditions.
+            From leading immersive experiences through Mumbai to exploring the
+            ancient wonders of Ajanta and Ellora and designing journeys across
+            North and South India, Raj's vision has remained the same—to help
+            travellers experience India beyond the guidebooks.
+          </p>
+          <p>
+            Today, Nomad Wanderers creates thoughtfully curated private
+            journeys that connect visitors with India's iconic landmarks,
+            hidden gems, local communities, and authentic everyday life. Every
+            experience is built on genuine local knowledge, meaningful
+            connections, and the stories, people, and traditions that make
+            India truly extraordinary.
           </p>
           <div className="stats">
             <div>
-              <b>500+</b>
+              <b>5,000+</b>
               <span>Tours guided</span>
             </div>
             <div>
-              <b>4.9/5</b>
-              <span>Average rating</span>
+              <b>★ 5.0</b>
+              <span>Star rating</span>
             </div>
             <div>
-              <b>12 yrs</b>
-              <span>Experience</span>
+              <b>12+</b>
+              <span>Years of experience</span>
             </div>
           </div>
           <button className="text-button" onClick={() => go("/contact")}>
@@ -1796,16 +1968,18 @@ function ToursV3({ go, city, category = "" }) {
   const [page, setPage] = useState(1);
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const filters = [
-    "All experiences",
-    "Heritage",
-    "Food",
-    "Culture",
-    "Walking",
-    "Adventure",
-    "Shared",
-    "Private",
-  ];
+  const filters = city
+    ? ["All experiences", "Shared", "Private"]
+    : [
+        "All experiences",
+        "Heritage",
+        "Food",
+        "Culture",
+        "Walking",
+        "Adventure",
+        "Shared",
+        "Private",
+      ];
   useEffect(() => {
     setLoading(true);
     const parameters = new URLSearchParams({
@@ -1918,11 +2092,7 @@ function ToursV3({ go, city, category = "" }) {
                     </div>
                     <button
                       className={tour.dark ? "dark-button" : "outline-button"}
-                      onClick={() =>
-                        go(
-                          `/contact?intent=book&tour=${encodeURIComponent(tour.title)}`,
-                        )
-                      }
+                      onClick={() => go(`/tours/${tour.id}`)}
                     >
                       Book this tour →
                     </button>
@@ -2384,6 +2554,7 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
   const [tours, setTours] = useState([]);
   const [screen, setScreen] = useState("list");
   const [selectedTour, setSelectedTour] = useState(null);
+  const [selectedTourIds, setSelectedTourIds] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const headers = { Authorization: `Bearer ${session.token}` };
@@ -2418,7 +2589,43 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
         throw new Error(body.detail || "Unable to delete the tour.");
       }
       setTours((current) => current.filter((item) => item.id !== tour.id));
+      setSelectedTourIds((current) => current.filter((id) => id !== tour.id));
       onTourDeleted(tour.id);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
+  const toggleTourSelection = (tourId) => {
+    setSelectedTourIds((current) =>
+      current.includes(tourId)
+        ? current.filter((id) => id !== tourId)
+        : [...current, tourId],
+    );
+  };
+  const toggleAllVisibleTours = () => {
+    const visibleIds = pageRecords.map((tour) => tour.id);
+    const allSelected = visibleIds.every((id) => selectedTourIds.includes(id));
+    setSelectedTourIds((current) =>
+      allSelected
+        ? current.filter((id) => !visibleIds.includes(id))
+        : [...new Set([...current, ...visibleIds])],
+    );
+  };
+  const removeSelectedTours = async () => {
+    if (!selectedTourIds.length) return;
+    if (!window.confirm(`Permanently delete ${selectedTourIds.length} selected tour(s)? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tours`, {
+        method: "DELETE",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ tour_ids: selectedTourIds }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "Unable to delete selected tours.");
+      setTours((current) => current.filter((tour) => !selectedTourIds.includes(tour.id)));
+      selectedTourIds.forEach(onTourDeleted);
+      setStatus(`${body.deleted} tour(s) permanently deleted.`);
+      setSelectedTourIds([]);
     } catch (error) {
       setStatus(error.message);
     }
@@ -2664,6 +2871,36 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
               value={form.highlights}
               onChange={(event) => update("highlights", event.target.value)}
             />
+          </label>
+          <label>
+            Inclusions <small>(comma-separated)</small>
+            <input value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} placeholder="Local guide, water, entry fees..." />
+          </label>
+          <label>
+            Gallery images <small>(upload up to 10 JPEG, PNG, or WebP files)</small>
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} />
+            <small>{galleryFiles.length ? `${galleryFiles.length} image(s) ready to upload.` : tour?.gallery_images?.length ? `${tour.gallery_images.length} saved image(s). Choose files to replace them.` : "Choose up to 10 images."}</small>
+          </label>
+          <label>
+            Traveller experience video <small>(upload MP4, WebM, or MOV; maximum 100 MB)</small>
+            <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
+            <small>{videoFile ? videoFile.name : tour?.traveller_video_url ? "A video is already saved. Choose a file to replace it." : "Choose one traveller experience video."}</small>
+          </label>
+          <label>
+            Meeting details
+            <textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Meeting point, start time and end point..." />
+          </label>
+          <label>
+            Private-tour price (INR) <small>(optional)</small>
+            <input type="number" min="1" step="1" value={form.private_price} onChange={(event) => update("private_price", event.target.value)} />
+          </label>
+          <label>
+            FAQs <small>(JSON array: [{'{'}"question":"...","answer":"..."{'}'}])</small>
+            <textarea rows="5" value={form.faq_items} onChange={(event) => update("faq_items", event.target.value)} />
+          </label>
+          <label>
+            Reviews <small>(JSON array: [{'{'}"name":"...","review":"..."{'}'}])</small>
+            <textarea rows="5" value={form.review_items} onChange={(event) => update("review_items", event.target.value)} />
           </label>
           <label>
             Badge <small>(optional)</small>
@@ -2946,7 +3183,42 @@ function Admin({ go, onTourCreated, session }) {
   );
 }
 
-function Dharavi({ go }) {
+function Dharavi({ go, tours, tourId = null, city = "Mumbai", category = "Community" }) {
+  const [activeTourTab, setActiveTourTab] = useState("tour-info");
+  const tour = tourId
+    ? tours.find((item) => item.id === tourId)
+    : tours.find((item) => item.city === city && item.category === category);
+  const tourTitle = tour?.title || "Dharavi Community Experience";
+  const tourDescription = tour?.description || "An honest, respectful introduction to the beating heart of Mumbai.";
+  const galleryImages = tour?.gallery_images || [];
+  const tourTabs = [
+    ["tour-info", "Tour info"],
+    ["price-inclusions", "Price & inclusions"],
+    ["tour-highlights", "Highlights"],
+    galleryImages.length > 0 && ["tour-gallery", "Gallery"],
+    tour?.meeting_details && ["meeting-map", "Meeting & map"],
+    tour?.review_items?.length > 0 && ["tour-reviews", "Reviews"],
+    tour?.faq_items?.length > 0 && ["tour-faqs", "FAQs"],
+  ].filter(Boolean);
+  const isDharaviTour = !tourId || /dharavi/i.test(tourTitle) || tour?.category === "Community";
+  useEffect(() => {
+    const updateActiveTab = () => {
+      const readingLine = window.scrollY + 245;
+      let current = tourTabs[0][0];
+      tourTabs.forEach(([id]) => {
+        const section = document.getElementById(id);
+        if (section && section.offsetTop <= readingLine) current = id;
+      });
+      setActiveTourTab(current);
+    };
+    updateActiveTab();
+    window.addEventListener("scroll", updateActiveTab, { passive: true });
+    window.addEventListener("hashchange", updateActiveTab);
+    return () => {
+      window.removeEventListener("scroll", updateActiveTab);
+      window.removeEventListener("hashchange", updateActiveTab);
+    };
+  }, []);
   const items = [
     [
       "eco",
@@ -2968,44 +3240,66 @@ function Dharavi({ go }) {
       "Meaningful impact",
       "A portion of every tour fee supports local community educational projects.",
     ],
+    ["storefront", "Small businesses", "Meet the makers, workshops and family businesses that keep Dharavi moving."],
+    ["recycling", "Recycling expertise", "Follow the remarkable journey of materials being sorted, reused and transformed."],
+    ["restaurant", "Local flavours", "Hear the food stories and everyday rituals that bring this neighbourhood together."],
+    ["history_edu", "Stories from residents", "Discover Dharavi through lived experience, not headlines or assumptions."],
   ];
+  const reviews = [
+    ["Stephane, France", "A thoughtful, eye-opening introduction to Dharavi. Our guide explained the community with warmth, knowledge and respect."],
+    ["Maya, United Kingdom", "The highlight of our Mumbai visit—personal, well paced and full of stories we would never have found alone."],
+    ["Daniel, Australia", "Professional from start to finish. We came away with a much deeper understanding of the people and industries here."],
+    ["Priya, India", "A meaningful experience for our family. The guide answered every question with honesty and care."],
+    ["Elena, Spain", "A memorable tour led by someone who genuinely knows and loves the neighbourhood."],
+  ];
+  const recommendedTours = [
+    ...tours.filter(
+      (item) =>
+        item.city === city &&
+        item.category === category &&
+        item.id !== tour?.id,
+    ),
+    { title: "Mumbai Street Food Tour", category: "Food", duration: "3.5 hours", price: "₹3,050", image: images.food },
+    { title: "Mumbai Heritage Walk", category: "Heritage", duration: "3 hours", price: "₹2,500", image: images.heritage },
+    { title: "Dharavi Pottery Workshop", category: "Community", duration: "3 hours", price: "₹2,200", image: images.pottery },
+  ]
+    .filter((item, index, list) =>
+      item.city === city &&
+      item.category === category &&
+      list.findIndex((candidate) => candidate.title === item.title) === index,
+    )
+    .slice(0, 3);
   return (
     <main className="top-space">
-      <Hero image={images.dharavi} className="detail-hero">
+      <Hero image={tour?.image || images.dharavi} className="detail-hero">
         <div className="hero-content">
           <Eyebrow>Mumbai Experiences</Eyebrow>
-          <h1>
-            Dharavi Slum Tour:
-            <br />
-            <em>A Local Heart-to-Heart</em>
-          </h1>
-          <p>
-            An honest, respectful introduction to the beating heart of Mumbai.
-          </p>
+          <h1>{tourTitle}</h1>
+          <p>{tourDescription}</p>
           <div className="hero-facts">
             <span>★ 4.9 (124 reviews)</span>
             <span>◷ 2 Hours</span>
           </div>
         </div>
       </Hero>
-      <section className="section detail-layout">
+      <nav className="tour-section-tabs" aria-label="Dharavi tour sections">
+        {tourTabs.map(([id, label]) => (
+          <a className={activeTourTab === id ? "active" : ""} href={`#${id}`} key={id} onClick={() => setActiveTourTab(id)}>{label}</a>
+        ))}
+      </nav>
+      <section className="section detail-layout" id="tour-info">
         <div className="detail-content">
-          <Eyebrow>Beyond the headlines</Eyebrow>
-          <h2>The Real Mumbai</h2>
+          <Eyebrow>Tour info</Eyebrow>
+          <h2>{isDharaviTour ? "Discover the Real Dharavi" : `Discover ${tourTitle}`}</h2>
           <p className="lead">
-            See the real Dharavi through the eyes of a resident. We explore
-            recycling, pottery, and the vibrant community spirit that defines
-            this unique landscape. Beyond the stereotypes lies a bustling
-            economic hub where waste is transformed into resources and neighbors
-            are family.
+            {tourDescription}
           </p>
-          <p>
-            Our walk isn't just about observation; it's about connection. You'll
-            witness the intricate processes of the leather industry, the
-            delicate craftsmanship of the Kumbharwada pottery colony, and the
-            remarkable recycling ecosystem that processes Mumbai's plastic and
-            metal.
-          </p>
+          {tour?.traveller_video_url && (
+            <div className="tour-video-wrap">
+              <video src={tour.traveller_video_url} controls preload="metadata">Your browser does not support video playback.</video>
+            </div>
+          )}
+          <p>{isDharaviTour ? "Our walk isn't just about observation; it's about connection. You'll witness the intricate processes of the leather industry, the delicate craftsmanship of the Kumbharwada pottery colony, and the remarkable recycling ecosystem that processes Mumbai's plastic and metal." : "Your local guide will share the stories, context, and everyday details that make this experience memorable."}</p>
           <div className="experience-grid">
             {items.map(([icon, title, text]) => (
               <article key={title}>
@@ -3042,26 +3336,76 @@ function Dharavi({ go }) {
           </p>
         </aside>
       </section>
-      <section className="section gallery">
-        <Eyebrow>Visual Journey</Eyebrow>
-        <h2>Moments from the Heart</h2>
-        <div className="gallery-grid">
-          <img
-            className="gallery-main"
-            src={images.pottery}
-            alt="Dharavi Pottery"
-          />
-          <img
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDP1bUih96fVokDh78O1peVCT-Hg7Xu32Vmyie9vipUJd4nLBGnNidiYjFvdEkqJLIcxcBrfm7Gc2O1XFletADGQ45nmufbb0QY45y3IFrgnL8Gip-Bm_eCfTj_Ur-lXiEiBsUkdH6hmifWfbaRqRa88AvrfJV4tKGcPTMO-TB2yDok1Ou1-ENuO8BwrGg6c1fq8Vw6wJsLQfDQIkszinJgi7yEeFJ-ltXVrCNveZeUaZFdfuy70wpC2B8ecaGbRb49i4bS8v2UytY"
-            alt="Dharavi Streets"
-          />
-          <img
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnlCgh0o-chnGKvS9f8ZNe6eID5Y-ttzDvRt3MvDy5LZNT1EdrFXrUWOoUx0jaIJPceKrMUpqUAXEIT7IGDyabPGt-Z8XixCQkUdh9Pu0G9NYows7H7qL2YIY3A_Qgb_eyyMz50ZOzZ-LZpX6II677taVlra9zznBGJfZFOVyp6GrPzgpXaCtwytNpFjki0l7unuMpJpdqVKpX-xsWuC-z0gGvVKiwjOyjJ3tvdAStK1axCOKLpo_IiyRgA0c5AqJMtFcH4GFxBY4"
-            alt="Recycling Hub"
-          />
-          <img src={images.mumbai} alt="Aerial View of Mumbai" />
+      <section className="section tour-reference-section" id="price-inclusions">
+        <Eyebrow>Price & inclusions</Eyebrow>
+        <h2>Choose the tour that suits you</h2>
+        <div className="tour-price-grid">
+          <article><span className="material-symbols-outlined">group</span><div><h3>Shared tour</h3><p>Meet fellow curious travellers in a small group.</p></div><b>From ₹1,500 <small>per person</small></b><ul><li>Resident local guide</li><li>2-hour walking tour</li><li>Community contribution included</li></ul></article>
+          <article><span className="material-symbols-outlined">lock</span><div><h3>Private tour</h3><p>A flexible experience exclusively for your group.</p></div><b>From ₹3,500 <small>per group</small></b><ul><li>Private local guide</li><li>Flexible start time</li><li>Personalised pace</li></ul></article>
         </div>
       </section>
+      <section className="section tour-reference-section" id="tour-highlights">
+        <Eyebrow>Highlights</Eyebrow>
+        <h2>What you will experience</h2>
+        <div className="tour-highlight-list">
+          {items.map(([icon, title, text]) => <details key={title}><summary><span className="material-symbols-outlined">{icon}</span>{title}<span className="material-symbols-outlined">add</span></summary><p>{text}</p></details>)}
+        </div>
+      </section>
+      {galleryImages.length > 0 && (
+        <section className="section gallery" id="tour-gallery">
+          <Eyebrow>Visual journey</Eyebrow>
+          <h2>Moments from {tourTitle}</h2>
+          <div className="gallery-grid">
+            {galleryImages.map((image, index) => (
+              <img className={index === 0 ? "gallery-main" : ""} src={image} alt={`${tourTitle} gallery image ${index + 1}`} key={image} />
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="section tour-reference-section tour-meeting" id="meeting-map">
+        <Eyebrow>Meeting & map</Eyebrow>
+        <h2>Meet your guide in Mumbai</h2>
+        <div className="meeting-grid"><div><h3>Starting point</h3><p>Churchgate Railway Station, Mumbai. Your guide will confirm the exact meeting point and time after booking.</p><h3>Ending point</h3><p>Dharavi, near Mahim Station. Your guide can help you with onward transport.</p></div><div className="meeting-map-card"><span className="material-symbols-outlined">location_on</span><b>Mumbai · Churchgate to Dharavi</b><small>Meeting details are sent with your confirmation.</small></div></div>
+      </section>
+      <section className="section tour-reference-section tour-reviews" id="tour-reviews">
+        <Eyebrow>Guest experiences</Eyebrow>
+        <h2>What travellers say</h2>
+        <div className="tour-reviews-grid">
+          {reviews.map(([name, review]) => (
+            <blockquote key={name}>“{review}”<footer>— {name} · <span>★★★★★</span></footer></blockquote>
+          ))}
+        </div>
+        <blockquote>“A thoughtful, eye-opening introduction to Dharavi. Our guide explained the community with warmth, knowledge and respect.”<footer>— Stephane, France · <span>★★★★★</span></footer></blockquote>
+      </section>
+      <section className="section tour-reference-section" id="tour-faqs">
+        <Eyebrow>FAQs</Eyebrow>
+        <h2>Before you go</h2>
+        <div className="tour-highlight-list tour-extra-faqs">
+          <details><summary>How much walking is involved?<span className="material-symbols-outlined">add</span></summary><p>The tour lasts around two hours at a relaxed pace, with plenty of time to pause and ask questions.</p></details>
+          <details><summary>What should I wear?<span className="material-symbols-outlined">add</span></summary><p>Wear comfortable walking shoes and light clothing suitable for Mumbai’s weather.</p></details>
+          <details><summary>Can I book a private guide?<span className="material-symbols-outlined">add</span></summary><p>Yes. Select a private tour when requesting your booking and we will confirm guide availability.</p></details>
+        </div>
+        <div className="tour-highlight-list"><details><summary>Is the tour respectful and ethical?<span className="material-symbols-outlined">add</span></summary><p>Yes. Tours are led by local guides and focus on Dharavi’s people, enterprise and culture with respect for residents’ privacy.</p></details><details><summary>Can I take photographs?<span className="material-symbols-outlined">add</span></summary><p>Photography is limited in residential areas. Your guide will explain where photos are appropriate.</p></details><details><summary>Is the tour suitable for children?<span className="material-symbols-outlined">add</span></summary><p>Families are welcome. Please contact us for guidance on the best format for your group.</p></details></div>
+      </section>
+      {recommendedTours.length > 0 && <section className="section recommended-tours" aria-labelledby="recommended-tours-title">
+        <Eyebrow>Recommended</Eyebrow>
+        <h2 id="recommended-tours-title">Other Tours You May Like</h2>
+        <div className="recommended-tour-grid">
+          {recommendedTours.map((item) => (
+            <article key={item.title}>
+              <img src={item.image} alt={item.title} />
+              <div>
+                <span>Private / group</span>
+                <h3>{item.title}</h3>
+                <p><span className="material-symbols-outlined">location_on</span>Departure: Mumbai</p>
+                <p><span className="material-symbols-outlined">schedule</span>Duration: {item.duration}</p>
+                <strong>From {item.price}</strong>
+                <button onClick={() => go(`/tours?city=Mumbai&category=${encodeURIComponent(item.category)}`)}>View tour</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>}
       <CTA go={go} />
     </main>
   );
@@ -4064,6 +4408,7 @@ function AdminDashboardV2({
   });
   const [screen, setScreen] = useState("list");
   const [selectedTour, setSelectedTour] = useState(null);
+  const [selectedTourIds, setSelectedTourIds] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -4176,7 +4521,44 @@ function AdminDashboardV2({
       });
       if (!response.ok) throw new Error("Unable to delete the tour.");
       setTours((current) => current.filter((item) => item.id !== tour.id));
+      setSelectedTourIds((current) => current.filter((id) => id !== tour.id));
       onTourDeleted(tour.id);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
+  const toggleTourSelection = (tourId) => {
+    setSelectedTourIds((current) =>
+      current.includes(tourId)
+        ? current.filter((id) => id !== tourId)
+        : [...current, tourId],
+    );
+  };
+  const toggleAllVisibleTours = () => {
+    const visibleIds = pageRecords.map((tour) => tour.id);
+    const allSelected = visibleIds.every((id) => selectedTourIds.includes(id));
+    setSelectedTourIds((current) =>
+      allSelected
+        ? current.filter((id) => !visibleIds.includes(id))
+        : [...new Set([...current, ...visibleIds])],
+    );
+  };
+  const removeSelectedTours = async () => {
+    if (!selectedTourIds.length) return;
+    if (!window.confirm(`Permanently delete ${selectedTourIds.length} selected tour(s)? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tours`, {
+        method: "DELETE",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ tour_ids: selectedTourIds }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "Unable to delete selected tours.");
+      setTours((current) => current.filter((tour) => !selectedTourIds.includes(tour.id)));
+      selectedTourIds.forEach(onTourDeleted);
+      setSelectedTourIds([]);
+      await loadDashboard();
+      setStatus(`${body.deleted} tour(s) permanently deleted.`);
     } catch (error) {
       setStatus(error.message);
     }
@@ -4285,9 +4667,16 @@ function AdminDashboardV2({
             <div className="admin-collection-content">
               {pageRecords.length ? (
                 activeTab === "tours" ? (
-                  <div className="admin-tour-grid">
+                  <>
+                    <div className="admin-bulk-actions">
+                      <label><input type="checkbox" checked={pageRecords.every((tour) => selectedTourIds.includes(tour.id))} onChange={toggleAllVisibleTours} /> Select all on this page</label>
+                      <span>{selectedTourIds.length} selected</span>
+                      <button className="delete-button" disabled={!selectedTourIds.length} onClick={removeSelectedTours}>Delete selected permanently</button>
+                    </div>
+                    <div className="admin-tour-grid">
                     {pageRecords.map((tour) => (
                       <article className="admin-tour-card" key={tour.id}>
+                        <label className="admin-tour-select"><input type="checkbox" checked={selectedTourIds.includes(tour.id)} onChange={() => toggleTourSelection(tour.id)} aria-label={`Select ${tour.title}`} /></label>
                         <img src={tour.image_url} alt={tour.title} />
                         <div className="admin-card-copy">
                           <div>
@@ -4321,7 +4710,8 @@ function AdminDashboardV2({
                         </div>
                       </article>
                     ))}
-                  </div>
+                    </div>
+                  </>
                 ) : activeTab === "reports" ? (
                   <AdminReportPanel report={report} />
                 ) : activeTab === "bookings" ? (
@@ -4524,12 +4914,21 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     start_time: tour?.start_time || "",
     guide_name: tour?.guide_name || "",
     highlights: (tour?.highlights || []).join(", "),
+    inclusions: (tour?.inclusions || []).join(", "),
+    gallery_images: (tour?.gallery_images || []).join("\n"),
+    meeting_details: tour?.meeting_details || "",
+    traveller_video_url: tour?.traveller_video_url || "",
+    private_price: tour?.private_price || "",
+    faq_items: JSON.stringify(tour?.faq_items || [], null, 2),
+    review_items: JSON.stringify(tour?.review_items || [], null, 2),
     tag: tour?.tag || "",
     featured: tour?.featured || false,
     dark: tour?.dark || false,
     published: tour?.published ?? true,
   }));
   const [imageFile, setImageFile] = useState(null);
+  const [galleryFiles, setGalleryFiles] = useState([]);
+  const [videoFile, setVideoFile] = useState(null);
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const update = (field, value) =>
@@ -4550,6 +4949,16 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
+      inclusions: form.inclusions.split(",").map((item) => item.trim()).filter(Boolean),
+      gallery_images: form.gallery_images
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean),
+      meeting_details: form.meeting_details.trim(),
+      traveller_video_url: form.traveller_video_url.trim() || null,
+      private_price: form.private_price ? Number(form.private_price) : null,
+      faq_items: JSON.parse(form.faq_items || "[]"),
+      review_items: JSON.parse(form.review_items || "[]"),
     };
     try {
       if (imageFile) {
@@ -4571,6 +4980,25 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         payload.image_url = uploadBody.image_url;
       } else if (!tour) {
         throw new Error("Please choose a tour image.");
+      }
+      if (galleryFiles.length) {
+        const uploadedImages = await Promise.all(galleryFiles.map(async (file) => {
+          const data = new FormData();
+          data.append("image", file);
+          const response = await fetch(`${apiBaseUrl}/api/admin/tour-images`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` }, body: data });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.detail || "Unable to upload a gallery image.");
+          return body.image_url;
+        }));
+        payload.gallery_images = uploadedImages;
+      }
+      if (videoFile) {
+        const data = new FormData();
+        data.append("video", videoFile);
+        const response = await fetch(`${apiBaseUrl}/api/admin/tour-videos`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` }, body: data });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "Unable to upload the traveller video.");
+        payload.traveller_video_url = body.video_url;
       }
       const response = await fetch(
         `${apiBaseUrl}/api/admin/tours${tour ? `/${tour.id}` : ""}`,
@@ -4677,6 +5105,9 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                   ? "Leave empty to keep the current image."
                   : "JPEG, PNG, or WebP, up to 5 MB."}
             </small>
+            {tour?.image_url && !imageFile && (
+              <img className="admin-media-preview admin-main-image-preview" src={tour.image_url} alt="Current tour" />
+            )}
           </label>
           <label>
             Category
@@ -4769,6 +5200,46 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               onChange={(event) => update("highlights", event.target.value)}
               placeholder="Gateway of India, Marine Drive..."
             />
+          </label>
+          <label>
+            Inclusions <small>(comma-separated)</small>
+            <input value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} placeholder="Local guide, water, entry fees..." />
+          </label>
+          <label>
+            Gallery image URLs <small>(one URL per line, up to 10)</small>
+            <textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." />
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} />
+            <small>{galleryFiles.length ? `${galleryFiles.length} new gallery image(s) ready to upload.` : "Add URLs above or choose replacement images."}</small>
+            {tour?.gallery_images?.length > 0 && !galleryFiles.length && (
+              <div className="admin-gallery-preview">
+                {tour.gallery_images.map((image) => <img src={image} alt="Saved gallery" key={image} />)}
+              </div>
+            )}
+          </label>
+          <label>
+            Traveller experience video URL <small>(YouTube embed or video URL)</small>
+            <input type="url" value={form.traveller_video_url} onChange={(event) => update("traveller_video_url", event.target.value)} placeholder="https://www.youtube.com/embed/..." />
+            <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
+            <small>{videoFile ? videoFile.name : "Add a video URL above or choose a replacement video."}</small>
+            {tour?.traveller_video_url && !videoFile && (
+              <a className="admin-saved-video-link" href={tour.traveller_video_url} target="_blank" rel="noreferrer">View saved traveller video</a>
+            )}
+          </label>
+          <label>
+            Meeting details
+            <textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Meeting point, start time and end point..." />
+          </label>
+          <label>
+            Private-tour price (INR) <small>(optional)</small>
+            <input type="number" min="1" step="1" value={form.private_price} onChange={(event) => update("private_price", event.target.value)} />
+          </label>
+          <label>
+            FAQs <small>(JSON array: [{'{'}"question":"...","answer":"..."{'}'}])</small>
+            <textarea rows="5" value={form.faq_items} onChange={(event) => update("faq_items", event.target.value)} />
+          </label>
+          <label>
+            Reviews <small>(JSON array: [{'{'}"name":"...","review":"..."{'}'}])</small>
+            <textarea rows="5" value={form.review_items} onChange={(event) => update("review_items", event.target.value)} />
           </label>
           <label>
             Badge <small>(optional)</small>
@@ -5263,7 +5734,10 @@ function AdminRequestCard({ item, isJourney, onSave, onDelete }) {
 
 function Footer({ go }) {
   return (
-    <footer className="site-footer">
+    <footer className="site-footer reference-footer">
+      <div className="footer-skyline" aria-hidden="true"><img src={footerCitySkyline} alt="" /></div>
+      <div className="footer-brand-row"><button className="brand" onClick={() => go("/")}>Nomad Wanderers</button></div>
+      <div className="footer-reference-grid">
       <div>
         <button className="brand" onClick={() => go("/")}>
           Nomad Wanderers
@@ -5274,16 +5748,28 @@ function Footer({ go }) {
         </p>
       </div>
       <div>
-        <b>Explore</b>
+        <b>About us</b>
+        <button onClick={() => go("/about")}>Why choose us</button>
+        <button onClick={() => go("/about")}>Our social impact</button>
         <button onClick={() => go("/tours")}>Tours</button>
-        <button onClick={() => go("/")}>Our Story</button>
         <button onClick={() => go("/contact")}>Contact</button>
       </div>
       <div>
-        <b>Contact</b>
+        <b>Top destinations</b>
+        <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
+        <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
+        <button onClick={() => go("/tours?city=Mumbai&category=Community")}>Dharavi</button>
+        <button onClick={() => go("/tours/festival")}>Festival tours</button>
+      </div>
+      <div className="footer-contact">
+        <b>Contact & updates</b>
         <a href="mailto:hello@nomadwanderers.in">hello@nomadwanderers.in</a>
         <a href="tel:+919876543210">+91 98765 43210</a>
         <span>Colaba Causeway, Mumbai</span>
+        <form className="footer-newsletter" onSubmit={(event) => event.preventDefault()}>
+          <label htmlFor="footer-email">Newsletter</label>
+          <div><input id="footer-email" type="email" placeholder="Email address" aria-label="Email address" /><button type="submit">Subscribe</button></div>
+        </form>
         <div className="footer-socials">
           <a
             href="https://www.facebook.com/mudavath.ramesh.841066/"
@@ -5307,7 +5793,8 @@ function Footer({ go }) {
           </a>
         </div>
       </div>
-      <small>© 2026 Nomad Wanderers. Made for meaningful journeys.</small>
+      </div>
+      <div className="footer-bottom"><small>© 2026 Nomad Wanderers. All Rights Reserved.</small></div>
     </footer>
   );
 }

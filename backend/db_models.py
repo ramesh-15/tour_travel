@@ -18,7 +18,7 @@ from mysql.connector.connection import MySQLConnection
 DB_ENV_PATH = Path(__file__).with_name("db.env")
 TOUR_COLUMNS = (
     "title", "description", "image_url", "city", "mode", "trip_type", "category", "duration",
-    "price", "capacity", "schedule_type", "departure_date", "start_time", "guide_name", "highlights", "tag", "featured", "dark", "published",
+    "price", "capacity", "schedule_type", "departure_date", "start_time", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
 )
 
 
@@ -157,6 +157,13 @@ def initialize_database() -> None:
             start_time VARCHAR(5) NULL,
             guide_name VARCHAR(120) NULL,
             highlights JSON NOT NULL,
+            inclusions JSON NOT NULL,
+            gallery_images JSON NOT NULL,
+            faq_items JSON NOT NULL,
+            review_items JSON NOT NULL,
+            meeting_details TEXT NOT NULL,
+            traveller_video_url VARCHAR(2048) NULL,
+            private_price DECIMAL(12, 2) NULL,
             tag VARCHAR(40) NULL,
             featured BOOLEAN NOT NULL DEFAULT FALSE,
             dark BOOLEAN NOT NULL DEFAULT FALSE,
@@ -286,6 +293,13 @@ def initialize_database() -> None:
             ("tours", "departure_date", "DATE NULL"),
             ("tours", "start_time", "VARCHAR(5) NULL"),
             ("tours", "guide_name", "VARCHAR(120) NULL"),
+            ("tours", "inclusions", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "gallery_images", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "faq_items", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "review_items", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "meeting_details", "TEXT NOT NULL"),
+            ("tours", "traveller_video_url", "VARCHAR(2048) NULL"),
+            ("tours", "private_price", "DECIMAL(12, 2) NULL"),
             ("users", "username", "VARCHAR(80) NULL"),
             ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
             ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'customer'"),
@@ -348,8 +362,9 @@ def _complete_idempotency(connection: MySQLConnection, user_id: int, operation: 
 
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     tour = dict(row)
-    highlights = tour.get("highlights", [])
-    tour["highlights"] = json.loads(highlights) if isinstance(highlights, str) else highlights
+    for field in ("highlights", "inclusions", "gallery_images", "faq_items", "review_items"):
+        value = tour.get(field, [])
+        tour[field] = json.loads(value) if isinstance(value, str) else value
     for field in ("featured", "dark", "published"):
         tour[field] = bool(tour[field])
     return tour
@@ -389,8 +404,13 @@ def get_tour(tour_id: int) -> dict[str, Any] | None:
 
 
 def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any] | None:
-    values = {field: data[field] for field in TOUR_COLUMNS}
-    values["highlights"] = json.dumps(values["highlights"])
+    defaults: dict[str, Any] = {
+        "inclusions": [], "gallery_images": [], "faq_items": [], "review_items": [],
+        "meeting_details": "", "traveller_video_url": None, "private_price": None,
+    }
+    values = {field: data.get(field, defaults.get(field)) for field in TOUR_COLUMNS}
+    for field in ("highlights", "inclusions", "gallery_images", "faq_items", "review_items"):
+        values[field] = json.dumps(values[field])
     now = _utc_now()
     with database() as connection:
         if tour_id is None:
@@ -414,9 +434,46 @@ def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any
 
 
 def delete_tour(tour_id: int) -> bool:
+    return delete_tours([tour_id]) > 0
+
+
+def delete_tours(tour_ids: list[int]) -> int:
+    """Permanently delete the requested tours and return the number removed."""
+    if not tour_ids:
+        return 0
+    placeholders = ", ".join("%s" for _ in tour_ids)
     with database() as connection:
-        rowcount = _execute(connection, "DELETE FROM tours WHERE id = %s", (tour_id,))
-    return rowcount > 0
+        # A tour may be referenced by bookings. Remove dependent operational
+        # records first so a requested permanent tour deletion is not blocked
+        # by foreign-key constraints.
+        booking_rows = _fetch_all(
+            connection,
+            f"SELECT id FROM bookings WHERE tour_id IN ({placeholders})",
+            tuple(tour_ids),
+        )
+        booking_ids = [int(row["id"]) for row in booking_rows]
+        if booking_ids:
+            booking_placeholders = ", ".join("%s" for _ in booking_ids)
+            _execute(
+                connection,
+                f"DELETE FROM notification_logs WHERE booking_id IN ({booking_placeholders})",
+                tuple(booking_ids),
+            )
+            _execute(
+                connection,
+                f"DELETE FROM demo_payments WHERE booking_id IN ({booking_placeholders})",
+                tuple(booking_ids),
+            )
+            _execute(
+                connection,
+                f"DELETE FROM bookings WHERE id IN ({booking_placeholders})",
+                tuple(booking_ids),
+            )
+        return _execute(
+            connection,
+            f"DELETE FROM tours WHERE id IN ({placeholders})",
+            tuple(tour_ids),
+        )
 
 
 def revoke_token(token: str, expires_at: int) -> None:

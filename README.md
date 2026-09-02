@@ -59,8 +59,16 @@ delete all application data as well, use `docker compose --env-file docker.env
 down -v`.
 
 When deploying on another host, set `PUBLIC_API_URL` and
-`PUBLIC_FRONTEND_URL` in `docker.env` to their browser-accessible HTTPS URLs,
-then rebuild the frontend image.
+`PUBLIC_FRONTEND_URL` in `docker.env` to browser-accessible HTTPS URLs, then
+rebuild the frontend image. When the frontend and API share a domain, use that
+same HTTPS domain for both values. The included frontend Nginx configuration
+proxies `/api` and `/uploads` to the backend container, avoiding browser CORS
+requests for API calls and uploaded tour images. For example:
+
+```env
+PUBLIC_FRONTEND_URL=https://nomadwanderers.com
+PUBLIC_API_URL=https://nomadwanderers.com
+```
 
 Restart the Vite server after changing this file. Ensure the frontend origin is included in the backend `CORS_ORIGINS` setting.
 
