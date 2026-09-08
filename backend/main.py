@@ -107,6 +107,15 @@ class Tour(TourInput):
     updated_at: datetime
 
 
+class CarouselSelection(BaseModel):
+    tour_ids: list[int] = Field(min_length=5, max_length=5)
+
+
+class AdminCarouselResponse(BaseModel):
+    tour_ids: list[int] = Field(default_factory=list)
+    tours: list[Tour]
+
+
 class TourBulkDelete(BaseModel):
     tour_ids: list[int] = Field(min_length=1, max_length=100)
 
@@ -210,6 +219,13 @@ class AdminReport(BaseModel):
     bookings: int
     confirmed_bookings: int
     demo_payment_total: float
+
+
+class SiteSettings(BaseModel):
+    """Public payment details managed by an administrator."""
+
+    upi_id: str = Field(min_length=3, max_length=120, pattern=r"^[^\s@]+@[^\s@]+$")
+    upi_number: str = Field(min_length=5, max_length=40)
 
 
 RequestStatus = Literal["new", "in_progress", "quoted", "closed"]
@@ -392,6 +408,17 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": db_models.health()}
 
 
+@app.get("/api/site-settings", response_model=SiteSettings)
+def get_site_settings() -> SiteSettings:
+    """Expose the payment details needed to render the booking UPI QR code."""
+    return SiteSettings(**db_models.get_site_settings())
+
+
+@app.get("/api/home-carousel", response_model=list[Tour])
+def get_home_carousel() -> list[Tour]:
+    return [Tour(**tour) for tour in db_models.list_carousel_tours()]
+
+
 @app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
 async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
     """Store an admin-uploaded tour image and return its public URL."""
@@ -435,6 +462,55 @@ def get_admin_profile(account: dict[str, object] = Depends(admin_required)) -> d
         "username": str(account.get("username") or ADMIN_USERNAME),
         "role": "admin",
     }
+
+
+@app.get("/api/admin/settings", response_model=SiteSettings)
+def get_admin_settings(_: dict[str, object] = Depends(admin_required)) -> SiteSettings:
+    return SiteSettings(**db_models.get_site_settings())
+
+
+@app.put("/api/admin/settings", response_model=SiteSettings)
+def update_admin_settings(data: SiteSettings, _: dict[str, object] = Depends(admin_required)) -> SiteSettings:
+    values = {key: value.strip() for key, value in data.model_dump().items()}
+    if not values["upi_id"] or not values["upi_number"]:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UPI ID and UPI number are required")
+    return SiteSettings(**db_models.save_site_settings(values))
+
+
+@app.get("/api/admin/carousel", response_model=AdminCarouselResponse)
+def get_admin_carousel(_: dict[str, object] = Depends(admin_required)) -> AdminCarouselResponse:
+    tours = db_models.list_tours(include_unpublished=True)
+    available_ids = {int(tour["id"]) for tour in tours}
+    selected_ids = [
+        tour_id
+        for tour_id in db_models.get_carousel_tour_ids()
+        if tour_id in available_ids
+    ]
+    return AdminCarouselResponse(
+        tour_ids=selected_ids,
+        tours=[Tour(**tour) for tour in tours],
+    )
+
+
+@app.put("/api/admin/carousel", response_model=AdminCarouselResponse)
+def update_admin_carousel(data: CarouselSelection, _: dict[str, object] = Depends(admin_required)) -> AdminCarouselResponse:
+    tour_ids = list(dict.fromkeys(data.tour_ids))
+    if len(tour_ids) != 5:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Select exactly 5 tours for the home carousel")
+    available_ids = {int(tour["id"]) for tour in db_models.list_tours()}
+    missing_ids = [tour_id for tour_id in tour_ids if tour_id not in available_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Select published tours only; unavailable tour id(s): "
+            + ", ".join(map(str, missing_ids)),
+        )
+    db_models.save_carousel_tour_ids(tour_ids)
+    tours = db_models.list_tours(include_unpublished=True)
+    return AdminCarouselResponse(
+        tour_ids=tour_ids,
+        tours=[Tour(**tour) for tour in tours],
+    )
 
 
 @app.post("/api/auth/register", response_model=Account, status_code=status.HTTP_201_CREATED)

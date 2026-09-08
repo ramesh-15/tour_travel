@@ -20,6 +20,11 @@ TOUR_COLUMNS = (
     "title", "description", "image_url", "city", "mode", "trip_type", "category", "duration",
     "price", "capacity", "schedule_type", "departure_date", "start_time", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
 )
+DEFAULT_SITE_SETTINGS = {
+    "upi_id": "919876543210@upi",
+    "upi_number": "+91 98765 43210",
+}
+CAROUSEL_SETTING_KEY = "home_carousel_tour_ids"
 
 
 def _load_db_env() -> dict[str, str]:
@@ -180,6 +185,13 @@ def initialize_database() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS site_settings (
+            setting_key VARCHAR(80) NOT NULL PRIMARY KEY,
+            setting_value VARCHAR(255) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS contact_enquiries (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
@@ -326,6 +338,83 @@ def health() -> str:
         return "ok"
     except Exception:
         return "unavailable"
+
+
+def get_site_settings() -> dict[str, str]:
+    """Return public site settings, filling missing values with safe defaults."""
+    settings = dict(DEFAULT_SITE_SETTINGS)
+    with database() as connection:
+        rows = _fetch_all(
+            connection,
+            "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN (%s, %s)",
+            tuple(DEFAULT_SITE_SETTINGS),
+        )
+    for row in rows:
+        key = str(row.get("setting_key") or "")
+        value = str(row.get("setting_value") or "").strip()
+        if key in settings and value:
+            settings[key] = value
+    return settings
+
+
+def save_site_settings(values: dict[str, str]) -> dict[str, str]:
+    """Persist editable site settings and return the complete current values."""
+    now = _utc_now()
+    with database() as connection:
+        for key in DEFAULT_SITE_SETTINGS:
+            value = str(values.get(key) or DEFAULT_SITE_SETTINGS[key]).strip()
+            _execute(
+                connection,
+                "INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)",
+                (key, value, now),
+            )
+    return get_site_settings()
+
+
+def get_carousel_tour_ids() -> list[int]:
+    with database() as connection:
+        row = _fetch_one(
+            connection,
+            "SELECT setting_value FROM site_settings WHERE setting_key = %s",
+            (CAROUSEL_SETTING_KEY,),
+        )
+    if not row:
+        return []
+    try:
+        values = json.loads(str(row.get("setting_value") or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list):
+        return []
+    return [int(value) for value in values if isinstance(value, (int, str)) and str(value).isdigit()]
+
+
+def save_carousel_tour_ids(tour_ids: list[int]) -> list[int]:
+    normalized = list(dict.fromkeys(int(tour_id) for tour_id in tour_ids))
+    with database() as connection:
+        _execute(
+            connection,
+            "INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)",
+            (CAROUSEL_SETTING_KEY, json.dumps(normalized), _utc_now()),
+        )
+    return normalized
+
+
+def list_carousel_tours() -> list[dict[str, Any]]:
+    tour_ids = get_carousel_tour_ids()
+    if not tour_ids:
+        return []
+    placeholders = ", ".join("%s" for _ in tour_ids)
+    with database() as connection:
+        rows = _fetch_all(
+            connection,
+            f"SELECT * FROM tours WHERE published = TRUE AND id IN ({placeholders})",
+            tuple(tour_ids),
+        )
+    by_id = {int(row["id"]): row_to_dict(row) for row in rows}
+    return [by_id[tour_id] for tour_id in tour_ids if tour_id in by_id]
 
 
 def _request_hash(data: dict[str, Any]) -> str:
@@ -851,8 +940,8 @@ def paginate_public_tours(
             clauses.append(f"LOWER({column}) = LOWER(%s)")
             parameters.append(value)
     if category:
-        clauses.append("LOWER(category) LIKE LOWER(%s)")
-        parameters.append(f"%{category}%")
+        clauses.append("LOWER(category) = LOWER(%s)")
+        parameters.append(category)
     if search:
         clauses.append("LOWER(CONCAT_WS(' ', title, description, city, category, mode, trip_type)) LIKE LOWER(%s)")
         parameters.append(f"%{search.strip()}%")
