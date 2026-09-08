@@ -502,6 +502,7 @@ function App() {
       <UserPortal
         apiBaseUrl={apiBaseUrl}
         session={userSession}
+        siteSettings={siteSettings}
         onAuthenticated={(nextSession) => {
           sessionStorage.setItem("nomad_user_token", nextSession.token);
           setUserSession(nextSession);
@@ -3616,7 +3617,6 @@ function Dharavi({ go, tours, session = null, siteSettings = defaultSiteSettings
         <div className="hero-content">
           <Eyebrow>{tourCity || "India"} Experiences</Eyebrow>
           <h1>{tourTitle}</h1>
-          <p>{tourDescription}</p>
           <div className="hero-facts">
             <span>★ 4.9 (124 reviews)</span>
             <span>◷ 2 Hours</span>
