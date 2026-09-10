@@ -29,6 +29,7 @@ import config
 
 ENV_PATH = Path(__file__).with_name(".env")
 TOUR_UPLOADS_PATH = Path(__file__).with_name("uploads") / "tours"
+PAYMENT_UPLOADS_PATH = Path(__file__).with_name("uploads") / "payments"
 MAX_TOUR_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_TOUR_VIDEO_BYTES = 100 * 1024 * 1024
 TOUR_IMAGE_TYPES = {
@@ -62,6 +63,7 @@ TripType = Literal[
     "Half-day trip",
     "One-day trip",
     "Weekly trip",
+    "Multi-day trip",
     "Festival special",
 ]
 ScheduleType = Literal["Daily", "Specific date"]
@@ -69,6 +71,53 @@ UserRole = Literal["customer", "admin", "operations", "support"]
 BookingStatus = Literal["pending", "confirmed", "cancelled", "completed"]
 PaymentStatus = Literal["unpaid", "paid", "refunded"]
 ResponseItem = TypeVar("ResponseItem")
+
+
+class TourDestination(BaseModel):
+    city: str = Field(min_length=2, max_length=80)
+    nights: int = Field(default=0, ge=0, le=365)
+
+
+class ItineraryDay(BaseModel):
+    day: int = Field(ge=1, le=365)
+    title: str = Field(min_length=2, max_length=160)
+    location: str = Field(min_length=2, max_length=80)
+    overnight_location: str | None = Field(default=None, max_length=80)
+    summary: str = Field(default="", max_length=3000)
+    transport: list[str] = Field(default_factory=list, max_length=12)
+    activities: list[str] = Field(default_factory=list, max_length=20)
+    included: list[str] = Field(default_factory=list, max_length=20)
+    optional: list[str] = Field(default_factory=list, max_length=20)
+
+
+class InclusionGroup(BaseModel):
+    title: str = Field(min_length=2, max_length=80)
+    items: list[str] = Field(default_factory=list, max_length=30)
+
+
+class PricingTier(BaseModel):
+    travellers: int = Field(ge=1, le=500)
+    price_per_person: float = Field(gt=0, le=10_000_000)
+
+
+class TourHighlight(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    description: str = Field(default="", max_length=2000)
+
+
+class TourPricing(BaseModel):
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    pricing_model: Literal["fixed_per_person", "per_person_by_group_size", "on_request"] = "fixed_per_person"
+    tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+
+
+class TourAvailability(BaseModel):
+    booking_type: Literal["Scheduled", "On request", "Private on request"] = "Scheduled"
+    min_travellers: int = Field(default=1, ge=1, le=500)
+    max_travellers: int = Field(default=20, ge=1, le=500)
+    customizable: bool = False
 
 
 class TourInput(BaseModel):
@@ -85,15 +134,33 @@ class TourInput(BaseModel):
     schedule_type: ScheduleType = "Specific date"
     departure_date: date | None = None
     start_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    time_slots: list[str] = Field(default_factory=list, max_length=20)
     guide_name: str | None = Field(default=None, max_length=120)
-    highlights: list[str] = Field(default_factory=list, max_length=12)
+    highlights: list[str | TourHighlight] = Field(default_factory=list, max_length=12)
     inclusions: list[str] = Field(default_factory=list, max_length=12)
     gallery_images: list[str] = Field(default_factory=list, max_length=10)
     faq_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     review_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     meeting_details: str = Field(default="", max_length=2000)
+    start_meeting_point: str = Field(default="", max_length=300)
+    start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+    end_meeting_point: str = Field(default="", max_length=300)
+    end_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
     traveller_video_url: str | None = Field(default=None, max_length=2048)
     private_price: float | None = Field(default=None, gt=0, le=10_000_000)
+    categories: list[str] = Field(default_factory=list, max_length=12)
+    start_city: str | None = Field(default=None, max_length=80)
+    end_city: str | None = Field(default=None, max_length=80)
+    destinations: list[TourDestination] = Field(default_factory=list, max_length=30)
+    duration_days: int | None = Field(default=None, ge=1, le=365)
+    duration_nights: int | None = Field(default=None, ge=0, le=364)
+    languages: list[str] = Field(default_factory=list, max_length=10)
+    physicality: str | None = Field(default=None, max_length=40)
+    itinerary: list[ItineraryDay] = Field(default_factory=list, max_length=365)
+    inclusion_groups: list[InclusionGroup] = Field(default_factory=list, max_length=12)
+    exclusions: list[str] = Field(default_factory=list, max_length=30)
+    pricing: TourPricing | None = None
+    availability: TourAvailability | None = None
     tag: str | None = Field(default=None, max_length=40)
     featured: bool = False
     dark: bool = False
@@ -138,6 +205,11 @@ class UserRegistration(BaseModel):
 class UserLogin(BaseModel):
     username: str = Field(min_length=3, max_length=80)
     password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordReset(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class Account(BaseModel):
@@ -226,6 +298,7 @@ class SiteSettings(BaseModel):
 
     upi_id: str = Field(min_length=3, max_length=120, pattern=r"^[^\s@]+@[^\s@]+$")
     upi_number: str = Field(min_length=5, max_length=40)
+    upi_qr_image_url: str = Field(default="", max_length=2048)
 
 
 RequestStatus = Literal["new", "in_progress", "quoted", "closed"]
@@ -395,6 +468,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
 TOUR_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
+PAYMENT_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=TOUR_UPLOADS_PATH.parent), name="uploads")
 
 
@@ -436,6 +510,25 @@ async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
     (TOUR_UPLOADS_PATH / filename).write_bytes(contents)
     base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
     return {"image_url": f"{base_url}/uploads/tours/{filename}"}
+
+
+@app.post("/api/admin/payment-scanner", dependencies=[Depends(admin_required)])
+async def upload_payment_scanner(image: UploadFile = File(...)) -> dict[str, str]:
+    """Store the administrator's payment scanner and return its public URL."""
+    extension = TOUR_IMAGE_TYPES.get(image.content_type or "")
+    if not extension:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Upload a JPEG, PNG, or WebP payment scanner.")
+
+    contents = await image.read(MAX_TOUR_IMAGE_BYTES + 1)
+    if not contents:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The payment scanner file is empty.")
+    if len(contents) > MAX_TOUR_IMAGE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payment scanner images must be 5 MB or smaller.")
+
+    filename = f"{uuid.uuid4().hex}{extension}"
+    (PAYMENT_UPLOADS_PATH / filename).write_bytes(contents)
+    base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
+    return {"image_url": f"{base_url}/uploads/payments/{filename}"}
 
 
 @app.post("/api/admin/tour-videos", dependencies=[Depends(admin_required)])
@@ -534,6 +627,19 @@ def login_account(credentials: UserLogin) -> dict[str, str | int]:
     return {"access_token": create_access_token(str(user["id"]), str(user["role"])), "token_type": "bearer", "expires_in": JWT_EXPIRY_HOURS * 3600, "role": str(user["role"])}
 
 
+@app.post("/api/auth/reset-password")
+def reset_account_password(data: PasswordReset) -> dict[str, str]:
+    """Replace a registered account password after its email is confirmed."""
+    user = db_models.get_user_by_email(data.email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account was found for this email")
+    if not bool(user.get("is_active")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is not active")
+    if not db_models.reset_user_password_by_email(data.email, data.new_password):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account was found for this email")
+    return {"detail": "Password updated. Please sign in with your new password."}
+
+
 @app.get("/api/auth/me", response_model=Account)
 def get_current_account(user: dict[str, object] = Depends(authenticated_account)) -> Account:
     if user.get("legacy_admin"):
@@ -576,12 +682,15 @@ def list_tours(
     city: str | None = Query(default=None),
     mode: str | None = Query(default=None),
     trip_type: TripType | None = Query(default=None),
+    multi_day: bool = Query(default=False),
     category: str | None = Query(default=None, max_length=80),
     search: str | None = Query(default=None, max_length=160),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=9, ge=1, le=100),
 ) -> PaginatedResponse[Tour]:
-    items, total = db_models.paginate_public_tours(page, page_size, city, mode, trip_type, category, search)
+    items, total = db_models.paginate_public_tours(
+        page, page_size, city, mode, trip_type, category, search, multi_day,
+    )
     return PaginatedResponse(items=[Tour(**tour) for tour in items], total=total, page=page, page_size=page_size)
 
 

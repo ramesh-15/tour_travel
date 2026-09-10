@@ -18,11 +18,14 @@ from mysql.connector.connection import MySQLConnection
 DB_ENV_PATH = Path(__file__).with_name("db.env")
 TOUR_COLUMNS = (
     "title", "description", "image_url", "city", "mode", "trip_type", "category", "duration",
-    "price", "capacity", "schedule_type", "departure_date", "start_time", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
+    "price", "capacity", "schedule_type", "departure_date", "start_time", "time_slots", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "start_meeting_point", "start_meeting_map_url", "end_meeting_point", "end_meeting_map_url", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
+    "categories", "start_city", "end_city", "destinations", "duration_days", "duration_nights",
+    "languages", "physicality", "itinerary", "inclusion_groups", "exclusions", "pricing", "availability",
 )
 DEFAULT_SITE_SETTINGS = {
-    "upi_id": "919876543210@upi",
-    "upi_number": "+91 98765 43210",
+    "upi_id": "919619952139@upi",
+    "upi_number": "+91 96199 52139",
+    "upi_qr_image_url": "",
 }
 CAROUSEL_SETTING_KEY = "home_carousel_tour_ids"
 
@@ -160,6 +163,7 @@ def initialize_database() -> None:
             schedule_type VARCHAR(20) NOT NULL DEFAULT 'Specific date',
             departure_date DATE NULL,
             start_time VARCHAR(5) NULL,
+            time_slots JSON NOT NULL,
             guide_name VARCHAR(120) NULL,
             highlights JSON NOT NULL,
             inclusions JSON NOT NULL,
@@ -167,8 +171,25 @@ def initialize_database() -> None:
             faq_items JSON NOT NULL,
             review_items JSON NOT NULL,
             meeting_details TEXT NOT NULL,
+            start_meeting_point VARCHAR(300) NOT NULL DEFAULT '',
+            start_meeting_map_url VARCHAR(2048) NULL,
+            end_meeting_point VARCHAR(300) NOT NULL DEFAULT '',
+            end_meeting_map_url VARCHAR(2048) NULL,
             traveller_video_url VARCHAR(2048) NULL,
             private_price DECIMAL(12, 2) NULL,
+            categories JSON NOT NULL,
+            start_city VARCHAR(80) NULL,
+            end_city VARCHAR(80) NULL,
+            destinations JSON NOT NULL,
+            duration_days SMALLINT NULL,
+            duration_nights SMALLINT NULL,
+            languages JSON NOT NULL,
+            physicality VARCHAR(40) NULL,
+            itinerary JSON NOT NULL,
+            inclusion_groups JSON NOT NULL,
+            exclusions JSON NOT NULL,
+            pricing JSON NULL,
+            availability JSON NULL,
             tag VARCHAR(40) NULL,
             featured BOOLEAN NOT NULL DEFAULT FALSE,
             dark BOOLEAN NOT NULL DEFAULT FALSE,
@@ -304,14 +325,32 @@ def initialize_database() -> None:
             ("tours", "schedule_type", "VARCHAR(20) NOT NULL DEFAULT 'Specific date'"),
             ("tours", "departure_date", "DATE NULL"),
             ("tours", "start_time", "VARCHAR(5) NULL"),
+            ("tours", "time_slots", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "guide_name", "VARCHAR(120) NULL"),
             ("tours", "inclusions", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "gallery_images", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "faq_items", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "review_items", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "meeting_details", "TEXT NOT NULL"),
+            ("tours", "start_meeting_point", "VARCHAR(300) NOT NULL DEFAULT ''"),
+            ("tours", "start_meeting_map_url", "VARCHAR(2048) NULL"),
+            ("tours", "end_meeting_point", "VARCHAR(300) NOT NULL DEFAULT ''"),
+            ("tours", "end_meeting_map_url", "VARCHAR(2048) NULL"),
             ("tours", "traveller_video_url", "VARCHAR(2048) NULL"),
             ("tours", "private_price", "DECIMAL(12, 2) NULL"),
+            ("tours", "categories", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "start_city", "VARCHAR(80) NULL"),
+            ("tours", "end_city", "VARCHAR(80) NULL"),
+            ("tours", "destinations", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "duration_days", "SMALLINT NULL"),
+            ("tours", "duration_nights", "SMALLINT NULL"),
+            ("tours", "languages", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "physicality", "VARCHAR(40) NULL"),
+            ("tours", "itinerary", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "inclusion_groups", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "exclusions", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
+            ("tours", "pricing", "JSON NULL"),
+            ("tours", "availability", "JSON NULL"),
             ("users", "username", "VARCHAR(80) NULL"),
             ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
             ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'customer'"),
@@ -329,6 +368,21 @@ def initialize_database() -> None:
         _ensure_index(connection, "users", "users_email_idx", "email")
         _ensure_index(connection, "bookings", "bookings_user_created_idx", "user_id, created_at")
         _ensure_index(connection, "notification_logs", "notification_logs_booking_created_idx", "booking_id, created_at")
+        # A saved payment scanner can be a full public asset URL, which is
+        # longer than the original short UPI settings values.
+        _execute(connection, "ALTER TABLE site_settings MODIFY COLUMN setting_value VARCHAR(2048) NOT NULL")
+        # Replace the retired public contact/payment number in installations
+        # that still hold the original defaults, without changing any other
+        # administrator-configured setting.
+        for key, legacy_value in (
+            ("upi_id", "919876543210@upi"),
+            ("upi_number", "+91 98765 43210"),
+        ):
+            _execute(
+                connection,
+                "UPDATE site_settings SET setting_value = %s, updated_at = %s WHERE setting_key = %s AND setting_value = %s",
+                (DEFAULT_SITE_SETTINGS[key], _utc_now(), key, legacy_value),
+            )
 
 
 def health() -> str:
@@ -343,10 +397,11 @@ def health() -> str:
 def get_site_settings() -> dict[str, str]:
     """Return public site settings, filling missing values with safe defaults."""
     settings = dict(DEFAULT_SITE_SETTINGS)
+    placeholders = ", ".join("%s" for _ in settings)
     with database() as connection:
         rows = _fetch_all(
             connection,
-            "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN (%s, %s)",
+            f"SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ({placeholders})",
             tuple(DEFAULT_SITE_SETTINGS),
         )
     for row in rows:
@@ -451,7 +506,11 @@ def _complete_idempotency(connection: MySQLConnection, user_id: int, operation: 
 
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     tour = dict(row)
-    for field in ("highlights", "inclusions", "gallery_images", "faq_items", "review_items"):
+    for field in (
+        "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "time_slots",
+        "categories", "destinations", "languages", "itinerary", "inclusion_groups", "exclusions",
+        "pricing", "availability",
+    ):
         value = tour.get(field, [])
         tour[field] = json.loads(value) if isinstance(value, str) else value
     for field in ("featured", "dark", "published"):
@@ -494,11 +553,21 @@ def get_tour(tour_id: int) -> dict[str, Any] | None:
 
 def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any] | None:
     defaults: dict[str, Any] = {
-        "inclusions": [], "gallery_images": [], "faq_items": [], "review_items": [],
-        "meeting_details": "", "traveller_video_url": None, "private_price": None,
+        "inclusions": [], "gallery_images": [], "faq_items": [], "review_items": [], "time_slots": [],
+        "meeting_details": "", "start_meeting_point": "", "start_meeting_map_url": None,
+        "end_meeting_point": "", "end_meeting_map_url": None,
+        "traveller_video_url": None, "private_price": None,
+        "categories": [], "start_city": None, "end_city": None, "destinations": [],
+        "duration_days": None, "duration_nights": None, "languages": [], "physicality": None,
+        "itinerary": [], "inclusion_groups": [], "exclusions": [], "pricing": None,
+        "availability": None,
     }
     values = {field: data.get(field, defaults.get(field)) for field in TOUR_COLUMNS}
-    for field in ("highlights", "inclusions", "gallery_images", "faq_items", "review_items"):
+    for field in (
+        "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "time_slots",
+        "categories", "destinations", "languages", "itinerary", "inclusion_groups", "exclusions",
+        "pricing", "availability",
+    ):
         values[field] = json.dumps(values[field])
     now = _utc_now()
     with database() as connection:
@@ -625,6 +694,17 @@ def get_user_by_username(username: str) -> dict[str, Any] | None:
 def get_user(user_id: int) -> dict[str, Any] | None:
     with database() as connection:
         return _fetch_one(connection, "SELECT id, name, username, email, phone, role, is_active, created_at FROM users WHERE id = %s", (user_id,))
+
+
+def reset_user_password_by_email(email: str, new_password: str) -> bool:
+    """Store a freshly salted password hash for the matching account."""
+    with database() as connection:
+        changed = _execute(
+            connection,
+            "UPDATE users SET password_hash = %s, updated_at = %s WHERE email = %s",
+            (hash_password(new_password), _utc_now(), email.lower()),
+        )
+    return changed > 0
 
 
 def update_user_profile(user_id: int, name: str, phone: str | None = None, email: str | None = None) -> dict[str, Any] | None:
@@ -932,6 +1012,7 @@ def paginate_public_tours(
     trip_type: str | None = None,
     category: str | None = None,
     search: str | None = None,
+    multi_day: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     clauses = ["published = TRUE"]
     parameters: list[Any] = []
@@ -939,11 +1020,17 @@ def paginate_public_tours(
         if value:
             clauses.append(f"LOWER({column}) = LOWER(%s)")
             parameters.append(value)
+    if multi_day:
+        clauses.append("trip_type IN ('Weekly trip', 'Multi-day trip')")
+    elif not trip_type:
+        clauses.append("trip_type NOT IN ('Weekly trip', 'Multi-day trip')")
     if category:
-        clauses.append("LOWER(category) = LOWER(%s)")
-        parameters.append(category)
+        clauses.append(
+            "(LOWER(category) = LOWER(%s) OR JSON_CONTAINS(categories, JSON_QUOTE(%s)))"
+        )
+        parameters.extend((category, category))
     if search:
-        clauses.append("LOWER(CONCAT_WS(' ', title, description, city, category, mode, trip_type)) LIKE LOWER(%s)")
+        clauses.append("LOWER(CONCAT_WS(' ', title, description, city, category, categories, mode, trip_type)) LIKE LOWER(%s)")
         parameters.append(f"%{search.strip()}%")
     where_clause = f" WHERE {' AND '.join(clauses)}"
     offset = (page - 1) * page_size

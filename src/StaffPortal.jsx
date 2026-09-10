@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatApiError } from './apiError'
 
 const headers = (token) => ({ Authorization: `Bearer ${token}` })
 
@@ -18,7 +19,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
       const me = await fetch(`${apiBaseUrl}/api/auth/me`, { headers: headers(session.token) })
       if (me.status === 401) { onLogout(); return }
       const profile = await me.json()
-      if (!me.ok) throw new Error(profile.detail || 'Unable to load the staff account.')
+      if (!me.ok) throw new Error(formatApiError(profile.detail, 'Unable to load the staff account.'))
       setAccount(profile)
       if (!['admin', 'operations', 'support'].includes(profile.role)) throw new Error('This is a traveller account. Use the profile icon to access your bookings.')
       const requests = [fetch(`${apiBaseUrl}/api/staff/bookings`, { headers: headers(session.token) })]
@@ -26,7 +27,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
       if (profile.role !== 'support') requests.push(fetch(`${apiBaseUrl}/api/operations/tours`, { headers: headers(session.token) }))
       const responses = await Promise.all(requests)
       const bodies = await Promise.all(responses.map(response => response.json()))
-      if (responses.some(response => !response.ok)) throw new Error(bodies.find(body => body.detail)?.detail || 'Unable to load the workspace.')
+      if (responses.some(response => !response.ok)) throw new Error(formatApiError(bodies.find(body => body.detail)?.detail, 'Unable to load the workspace.'))
       setBookings(bodies[0])
       let offset = 1
       if (profile.role !== 'operations') setEnquiries(bodies[offset++].items || [])
@@ -46,7 +47,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
     try {
       const response = await fetch(`${apiBaseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to sign in.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to sign in.'))
       onAuthenticated({ token: body.access_token })
     } catch (error) {
       setStatus(error.message)
@@ -60,7 +61,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
     try {
       const response = await fetch(`${apiBaseUrl}/api/staff/bookings/${booking.id}`, { method: 'PATCH', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify({ booking_status }) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to update booking.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to update booking.'))
       setBookings(current => current.map(item => item.id === body.id ? body : item))
     } catch (error) { setStatus(error.message) }
   }
@@ -69,7 +70,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
     try {
       const response = await fetch(`${apiBaseUrl}/api/staff/bookings/${booking.id}/confirmations`, { method: 'POST', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify({ channels: ['email', 'whatsapp'] }) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to queue confirmation.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to queue confirmation.'))
       setStatus(`Booking #${booking.id}: ${body.message}`)
     } catch (error) { setStatus(error.message) }
   }
@@ -78,7 +79,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
     try {
       const response = await fetch(`${apiBaseUrl}/api/operations/tours/${tour.id}/schedule`, { method: 'PATCH', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify({ capacity: Number(form.capacity), departure_date: form.departure_date || null, guide_name: form.guide_name || null }) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to update schedule.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to update schedule.'))
       setTours(current => current.map(item => item.id === body.id ? body : item))
       setStatus(`Schedule updated for ${body.title}.`)
     } catch (error) { setStatus(error.message) }
@@ -88,7 +89,7 @@ export function StaffPortal({ apiBaseUrl, session, onAuthenticated, onLogout }) 
     try {
       const response = await fetch(`${apiBaseUrl}/api/staff/contact-enquiries/${enquiry.id}`, { method: 'PUT', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify({ status: statusValue, admin_notes: enquiry.admin_notes || '' }) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to update enquiry.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to update enquiry.'))
       setEnquiries(current => current.map(item => item.id === body.id ? body : item))
     } catch (error) { setStatus(error.message) }
   }
@@ -115,7 +116,7 @@ export function AdminTeamPortal({ apiBaseUrl, session, onLogout, onBack }) {
     const response = await fetch(`${apiBaseUrl}/api/admin/users`, { headers: headers(session.token) })
     const body = await response.json()
     if (response.status === 401) { onLogout(); return }
-    if (!response.ok) throw new Error(body.detail || 'Unable to load accounts.')
+    if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to load accounts.'))
     setAccounts(body)
   }
   useEffect(() => { loadAccounts().catch(error => setStatus(error.message)) }, [])
@@ -124,8 +125,7 @@ export function AdminTeamPortal({ apiBaseUrl, session, onLogout, onBack }) {
     try {
       const response = await fetch(`${apiBaseUrl}/api/admin/users`, { method: 'POST', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const body = await response.json()
-      const validationMessage = Array.isArray(body.detail) ? body.detail.map(issue => `${issue.loc.at(-1)}: ${issue.msg}`).join('. ') : body.detail
-      if (!response.ok) throw new Error(validationMessage || 'Unable to create staff account.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to create staff account.'))
       setAccounts(current => [body, ...current]); setForm({ name: '', username: '', email: '', password: '', role: 'operations' }); setStatus('Staff account created.')
     } catch (error) { setStatus(error.message) }
   }
@@ -133,7 +133,7 @@ export function AdminTeamPortal({ apiBaseUrl, session, onLogout, onBack }) {
     try {
       const response = await fetch(`${apiBaseUrl}/api/admin/users/${account.id}`, { method: 'PATCH', headers: { ...headers(session.token), 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !account.is_active }) })
       const body = await response.json()
-      if (!response.ok) throw new Error(body.detail || 'Unable to update account.')
+      if (!response.ok) throw new Error(formatApiError(body.detail, 'Unable to update account.'))
       setAccounts(current => current.map(item => item.id === body.id ? body : item))
     } catch (error) { setStatus(error.message) }
   }

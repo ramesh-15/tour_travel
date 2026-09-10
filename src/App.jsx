@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import delhiIndiaGate from "./assets/delhi-india-gate.png";
 import roadTripCar from "./assets/road-trip-car.png";
 import rajasthanCamelTour from "./assets/rajasthan-desert-camel-tour.png";
@@ -41,12 +41,18 @@ const fallbackTours = [];
 */
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const businessWhatsAppNumber = "919876543210";
-const businessUpiId = import.meta.env.VITE_UPI_ID || "919876543210@upi";
+const businessWhatsAppNumber = "919619952139";
+const businessUpiId = import.meta.env.VITE_UPI_ID || "919619952139@upi";
 const defaultSiteSettings = {
   upi_id: businessUpiId,
-  upi_number: "+91 98765 43210",
+  upi_number: "+91 96199 52139",
+  upi_qr_image_url: "",
 };
+const MULTI_DAY_TRIP_TYPES = ["Weekly trip", "Multi-day trip"];
+
+function isMultiDayTour(tour) {
+  return MULTI_DAY_TRIP_TYPES.includes(tour?.trip_type);
+}
 
 function requiresCustomerAuth(destination) {
   const url = new URL(destination, window.location.origin);
@@ -54,7 +60,8 @@ function requiresCustomerAuth(destination) {
     url.pathname === "/contact" &&
     ["book", "custom"].includes(url.searchParams.get("intent"));
   const protectedBooking =
-    url.pathname.startsWith("/tours") && url.searchParams.get("booking") === "1";
+    (url.pathname.startsWith("/tours") || url.pathname.startsWith("/trips/")) &&
+    url.searchParams.get("booking") === "1";
   return protectedIntent || protectedBooking || url.pathname === "/payment";
 }
 
@@ -109,6 +116,7 @@ function AuthRequiredModal({ destination, onCancel, onContinue }) {
 function apiTourToUi(tour) {
   return {
     ...tour,
+    price_value: Number(tour.price),
     text: tour.description,
     image: tour.image_url,
     price: new Intl.NumberFormat("en-IN", {
@@ -117,6 +125,79 @@ function apiTourToUi(tour) {
       maximumFractionDigits: 0,
     }).format(tour.price),
   };
+}
+
+function formatApiError(detail, fallback = "Unable to complete this request.") {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return "";
+        const location = Array.isArray(item.loc)
+          ? item.loc
+              .filter((part) => part !== "body")
+              .map((part) => String(part).replace(/_/g, " "))
+              .join(" → ")
+          : "";
+        const message = item.msg || item.message || "Invalid value";
+        return location ? `${location}: ${message}` : message;
+      })
+      .filter(Boolean);
+    if (messages.length) return messages.slice(0, 3).join(". ");
+  }
+  if (detail && typeof detail === "object") {
+    return detail.message || detail.msg || fallback;
+  }
+  return fallback;
+}
+
+function normalizeTourHighlights(highlights) {
+  return (Array.isArray(highlights) ? highlights : [])
+    .map((highlight) => {
+      if (typeof highlight === "string") {
+        return { title: highlight, description: "" };
+      }
+      return {
+        title: highlight?.title || "",
+        description: highlight?.description || "",
+      };
+    })
+    .filter((highlight) => highlight.title);
+}
+
+function getTourHighlightTitle(highlight) {
+  return typeof highlight === "string" ? highlight : highlight?.title || "";
+}
+
+function getGoogleMapsUrl(mapUrl, location) {
+  const directUrl = typeof mapUrl === "string" ? mapUrl.trim() : "";
+  if (directUrl) return directUrl;
+  const locationQuery = typeof location === "string" ? location.trim() : "";
+  return locationQuery
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationQuery)}`
+    : "";
+}
+
+function getGoogleMapsRouteUrl(startLocation, endLocation, fallbackUrl = "") {
+  const start = typeof startLocation === "string" ? startLocation.trim() : "";
+  const end = typeof endLocation === "string" ? endLocation.trim() : "";
+  if (start && end) {
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(start)}&destination=${encodeURIComponent(end)}`;
+  }
+  return fallbackUrl || getGoogleMapsUrl("", start || end);
+}
+
+function getGoogleMapsEmbedUrl(startLocation, endLocation) {
+  const start = typeof startLocation === "string" ? startLocation.trim() : "";
+  const end = typeof endLocation === "string" ? endLocation.trim() : "";
+  if (start && end) {
+    return `https://maps.google.com/maps?saddr=${encodeURIComponent(start)}&daddr=${encodeURIComponent(end)}&output=embed`;
+  }
+  const location = start || end;
+  return location
+    ? `https://maps.google.com/maps?q=${encodeURIComponent(location)}&output=embed`
+    : "";
 }
 
 function DummyPayment({ session }) {
@@ -162,7 +243,9 @@ function DummyPayment({ session }) {
       });
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to complete the demo payment.");
+        throw new Error(
+          formatApiError(body.detail, "Unable to complete the demo payment."),
+        );
       setPayment(body);
     } catch (error) {
       setStatus(error.message);
@@ -421,6 +504,7 @@ function App() {
         setSiteSettings({
           upi_id: settings.upi_id || defaultSiteSettings.upi_id,
           upi_number: settings.upi_number || defaultSiteSettings.upi_number,
+          upi_qr_image_url: settings.upi_qr_image_url || "",
         }),
       )
       .catch(() => {});
@@ -440,6 +524,7 @@ function App() {
   const customerRouteIsProtected = requiresCustomerAuth(`${path}${query}`);
   const showingLogin =
     path === "/login" || (customerRouteIsProtected && !userSession);
+  const tourSearchTerm = new URLSearchParams(query).get("search") || "";
   const page = showingLogin ? (
     loginPage
   ) : path === "/admin/team" ? (
@@ -515,18 +600,31 @@ function App() {
   ) : path === "/about" ? (
     <About go={go} />
   ) : path === "/tours/unique" ? (
-    <ToursV3 go={go} city="" category="Unique" tours={tours} />
+    <ToursV3
+      go={go}
+      city=""
+      category="Unique"
+      tours={tours}
+      searchTerm={tourSearchTerm}
+    />
   ) : path === "/trips" ? (
     <MultiDayToursPage
       go={go}
       mode={new URLSearchParams(query).get("mode") || ""}
       tours={tours}
     />
+  ) : /^\/trips\/\d+$/.test(path) ? (
+    <MultiDayTourDetail
+      go={go}
+      tourId={Number(path.split("/").pop())}
+      session={userSession}
+      siteSettings={siteSettings}
+      initialBooking={new URLSearchParams(query).get("booking") === "1"}
+    />
   ) : path === "/tours" ? (
     new URLSearchParams(query).get("view") === "detail" ? (
-      <Dharavi
+      <TourDetail
         go={go}
-        tours={tours}
         session={userSession}
         siteSettings={siteSettings}
         initialBooking={new URLSearchParams(query).get("booking") === "1"}
@@ -540,14 +638,13 @@ function App() {
         category={new URLSearchParams(query).get("category") || ""}
         mode={new URLSearchParams(query).get("mode") || ""}
         tours={tours}
+        searchTerm={tourSearchTerm}
       />
     )
-  ) : path === "/tours/dharavi" && tours.some((tour) => /dharavi/i.test(tour.title) || tour.category === "Community") ? (
-    <Dharavi go={go} tours={tours} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} />
   ) : path === "/tours/dharavi" ? (
-    <ToursV3 go={go} city="Mumbai" category="Community" tours={tours} />
+    <TourDetail go={go} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} />
   ) : /^\/tours\/\d+$/.test(path) ? (
-    <Dharavi go={go} tours={tours} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} tourId={Number(path.split("/").pop())} />
+    <TourDetail go={go} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} tourId={Number(path.split("/").pop())} />
   ) : path === "/payment" ? (
     <DummyPayment session={userSession} />
   ) : path === "/contact" ? (
@@ -622,6 +719,9 @@ function Header({
   const [tripsOpen, setTripsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [navSearch, setNavSearch] = useState(
+    () => new URLSearchParams(query).get("search") || "",
+  );
   const navigationRef = useRef(null);
   const profileMenuRef = useRef(null);
   const closeNavigationMenus = () => {
@@ -659,6 +759,9 @@ function Header({
   useEffect(() => {
     closeNavigationMenus();
   }, [path, query]);
+  useEffect(() => {
+    setNavSearch(new URLSearchParams(query).get("search") || "");
+  }, [query]);
   useEffect(() => {
     if (!userMenuOpen) return undefined;
     const closeOnOutsideClick = (event) => {
@@ -794,15 +897,69 @@ function Header({
     setUserMenuOpen(false);
     go(destination);
   };
+  const usesTouchNavigation = () =>
+    window.matchMedia?.("(hover: none), (pointer: coarse)").matches;
+  const toggleToursMenu = () => {
+    setToursOpen((current) => !current);
+    setTripsOpen(false);
+    setMumbaiToursOpen(false);
+    setDelhiToursOpen(false);
+  };
+  const toggleTripsMenu = () => {
+    setTripsOpen((current) => !current);
+    setToursOpen(false);
+    setMumbaiToursOpen(false);
+    setDelhiToursOpen(false);
+  };
+  const toggleCityMenu = (city) => {
+    if (city === "Mumbai") {
+      setMumbaiToursOpen((current) => !current);
+      setDelhiToursOpen(false);
+      return;
+    }
+    setDelhiToursOpen((current) => !current);
+    setMumbaiToursOpen(false);
+  };
+  const handleToursTrigger = () => {
+    if (usesTouchNavigation()) {
+      toggleToursMenu();
+      return;
+    }
+    selectTour("/tours");
+  };
+  const handleTripsTrigger = () => {
+    if (usesTouchNavigation()) {
+      toggleTripsMenu();
+      return;
+    }
+    if (path === "/trips") {
+      toggleTripsMenu();
+      return;
+    }
+    selectTrip("/trips");
+  };
+  const handleCityTrigger = (city) => {
+    if (usesTouchNavigation()) {
+      toggleCityMenu(city);
+      return;
+    }
+    selectTour(`/tours?city=${city}`);
+  };
+  const submitTourSearch = (event) => {
+    event.preventDefault();
+    const searchParams = new URLSearchParams();
+    if (navSearch.trim()) searchParams.set("search", navSearch.trim());
+    selectTour(`/tours${searchParams.size ? `?${searchParams}` : ""}`);
+  };
   const activeCity = new URLSearchParams(query).get("city");
   return (
     <header className="site-header public-header">
       <div className="contact-bar">
         <div className="contact-bar-inner">
           <div className="contact-bar-details">
-            <a href="tel:+919876543210">
+            <a href="tel:+919619952139">
               <span className="material-symbols-outlined" aria-hidden="true">call</span>
-              +91 98765 43210
+              +91 96199 52139
             </a>
             <a href="mailto:hello@nomadwanderers.in">
               <span className="material-symbols-outlined" aria-hidden="true">mail</span>
@@ -818,16 +975,28 @@ function Header({
             </span> */}
           </div>
           <div className="contact-bar-actions">
-            <button className="contact-bar-search" onClick={() => go("/tours")} aria-label="Search tours">
-              <span>Search tours...</span>
-              <span className="material-symbols-outlined" aria-hidden="true">search</span>
-            </button>
+            <form className="contact-bar-search" onSubmit={submitTourSearch} role="search">
+              <label className="sr-only" htmlFor="contact-tour-search">
+                Search tours
+              </label>
+              <input
+                id="contact-tour-search"
+                value={navSearch}
+                onChange={(event) => setNavSearch(event.target.value)}
+                placeholder="Search tours"
+              />
+              <button type="submit" aria-label="Search tours">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  search
+                </span>
+              </button>
+            </form>
             <div className="contact-bar-socials" aria-label="Social media links">
-              <a className="facebook" href="https://www.facebook.com/mudavath.ramesh.841066/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Facebook"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.57 22v-8.74h2.93l.44-3.4h-3.37V7.69c0-.98.27-1.65 1.68-1.65h1.8V3c-.31-.04-1.38-.13-2.63-.13-2.6 0-4.38 1.59-4.38 4.5v2.49H7.1v3.4h2.94V22h3.53Z" /></svg></a>
-              <a className="instagram" href="https://www.instagram.com/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Instagram">
+              <a className="facebook" href="https://www.facebook.com/share/1ELaeB21ZH/?mibextid=wwXIfr" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Facebook"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.57 22v-8.74h2.93l.44-3.4h-3.37V7.69c0-.98.27-1.65 1.68-1.65h1.8V3c-.31-.04-1.38-.13-2.63-.13-2.6 0-4.38 1.59-4.38 4.5v2.49H7.1v3.4h2.94V22h3.53Z" /></svg></a>
+              <a className="instagram" href="https://www.instagram.com/nomadwanderers.co?igsi=MWI5ZDlqNm5uZWpkbg==" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on Instagram">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 2h9.6A5.2 5.2 0 0 1 22 7.2v9.6a5.2 5.2 0 0 1-5.2 5.2H7.2A5.2 5.2 0 0 1 2 16.8V7.2A5.2 5.2 0 0 1 7.2 2Zm-.17 2A3.03 3.03 0 0 0 4 7.03v9.94A3.03 3.03 0 0 0 7.03 20h9.94A3.03 3.03 0 0 0 20 16.97V7.03A3.03 3.03 0 0 0 16.97 4H7.03Zm9.25 1.5a1.22 1.22 0 1 1 0 2.44 1.22 1.22 0 0 1 0-2.44ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" /></svg>
               </a>
-              <a className="youtube" href="https://www.youtube.com/" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on YouTube">
+              <a className="youtube" href="https://youtube.com/@nomadwanderersco?si=4RqnyLG1Cuk0x-tP" target="_blank" rel="noreferrer" aria-label="Follow Nomad Wanderers on YouTube">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.12C19.55 3.58 12 3.58 12 3.58s-7.55 0-9.4.5A3 3 0 0 0 .5 6.2 31.15 31.15 0 0 0 0 12a31.15 31.15 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.12c1.85.5 9.4.5 9.4.5s7.55 0 9.4-.5a3 3 0 0 0 2.1-2.12A31.15 31.15 0 0 0 24 12a31.15 31.15 0 0 0-.5-5.8ZM9.6 15.55v-7.1L15.85 12 9.6 15.55Z" /></svg>
               </a>
             </div>
@@ -842,8 +1011,11 @@ function Header({
           {link("Home", "/", path === "/")}
           <div
             className="tours-menu"
-            onMouseEnter={() => setToursOpen(true)}
+            onMouseEnter={() => {
+              if (!usesTouchNavigation()) setToursOpen(true);
+            }}
             onMouseLeave={() => {
+              if (usesTouchNavigation()) return;
               setToursOpen(false);
               setMumbaiToursOpen(false);
               setDelhiToursOpen(false);
@@ -858,8 +1030,10 @@ function Header({
           >
             <button
               className={`nav-link tours-trigger ${path.startsWith("/tours") ? "active" : ""}`}
-              onClick={() => selectTour("/tours")}
-              onFocus={() => setToursOpen(true)}
+              onClick={handleToursTrigger}
+              onFocus={() => {
+                if (!usesTouchNavigation()) setToursOpen(true);
+              }}
               aria-expanded={toursOpen}
               aria-haspopup="true"
             >
@@ -868,41 +1042,56 @@ function Header({
             </button>
             {toursOpen && (
               <div className="tours-dropdown">
+                <button onClick={() => selectTour("/tours")}>All tours</button>
                 <div
                   className="nested-tour-menu"
-                  onMouseEnter={() => setMumbaiToursOpen(true)}
-                  onMouseLeave={() => setMumbaiToursOpen(false)}
+                  onMouseEnter={() => {
+                    if (!usesTouchNavigation()) setMumbaiToursOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (!usesTouchNavigation()) setMumbaiToursOpen(false);
+                  }}
                 >
                   <button
                     type="button"
-                    onClick={() => selectTour("/tours?city=Mumbai")}
-                    onFocus={() => setMumbaiToursOpen(true)}
+                    onClick={() => handleCityTrigger("Mumbai")}
+                    onFocus={() => {
+                      if (!usesTouchNavigation()) setMumbaiToursOpen(true);
+                    }}
                     aria-expanded={mumbaiToursOpen}
                   >
                     Mumbai <span className="material-symbols-outlined">chevron_right</span>
                   </button>
                   {mumbaiToursOpen && (
                     <div className="nested-tour-dropdown">
-                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Community&view=detail")}>Dharavi community tour</button>
-                      <button onClick={() => selectTour("/tours?city=Mumbai&category=City&view=detail")}>Mumbai sightseeing</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai")}>All Mumbai tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Cultural")}>Mumbai community tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Sightseeing")}>Mumbai sightseeing tours</button>
                     </div>
                   )}
                 </div>
                 <div
                   className="nested-tour-menu"
-                  onMouseEnter={() => setDelhiToursOpen(true)}
-                  onMouseLeave={() => setDelhiToursOpen(false)}
+                  onMouseEnter={() => {
+                    if (!usesTouchNavigation()) setDelhiToursOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (!usesTouchNavigation()) setDelhiToursOpen(false);
+                  }}
                 >
                   <button
                     type="button"
-                    onClick={() => selectTour("/tours?city=Delhi")}
-                    onFocus={() => setDelhiToursOpen(true)}
+                    onClick={() => handleCityTrigger("Delhi")}
+                    onFocus={() => {
+                      if (!usesTouchNavigation()) setDelhiToursOpen(true);
+                    }}
                     aria-expanded={delhiToursOpen}
                   >
                     Delhi <span className="material-symbols-outlined">chevron_right</span>
                   </button>
                   {delhiToursOpen && (
                     <div className="nested-tour-dropdown">
+                      <button onClick={() => selectTour("/tours?city=Delhi")}>All Delhi tours</button>
                       <button onClick={() => selectTour("/tours?city=Delhi&category=Community")}>Delhi community tours</button>
                       <button onClick={() => selectTour("/tours?city=Delhi&category=City")}>Delhi sightseeing</button>
                     </div>
@@ -917,8 +1106,12 @@ function Header({
           </div>
           <div
             className="trips-menu"
-            onMouseEnter={() => setTripsOpen(true)}
-            onMouseLeave={() => setTripsOpen(false)}
+            onMouseEnter={() => {
+              if (!usesTouchNavigation()) setTripsOpen(true);
+            }}
+            onMouseLeave={() => {
+              if (!usesTouchNavigation()) setTripsOpen(false);
+            }}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) {
                 setTripsOpen(false);
@@ -927,12 +1120,10 @@ function Header({
           >
             <button
               className={`nav-link trips-trigger ${path === "/trips" ? "active" : ""}`}
-              onClick={() =>
-                path === "/trips"
-                  ? setTripsOpen((current) => !current)
-                  : selectTrip("/trips")
-              }
-              onFocus={() => setTripsOpen(true)}
+              onClick={handleTripsTrigger}
+              onFocus={() => {
+                if (!usesTouchNavigation()) setTripsOpen(true);
+              }}
               aria-expanded={tripsOpen}
               aria-haspopup="true"
             >
@@ -941,6 +1132,7 @@ function Header({
             </button>
             {tripsOpen && (
               <div className="trips-dropdown">
+                <button onClick={() => selectTrip("/trips")}>All multi-day tours</button>
                 <button onClick={() => selectTrip("/trips?mode=Shared")}>
                   Shared tours
                 </button>
@@ -957,7 +1149,7 @@ function Header({
           <button onClick={() => go("/tours")} aria-label="Search tours">
             <span className="material-symbols-outlined" aria-hidden="true">search</span>
           </button>
-          <a href="tel:+919876543210" aria-label="Call Nomad Wanderers">
+          <a href="tel:+919619952139" aria-label="Call Nomad Wanderers">
             <span className="material-symbols-outlined" aria-hidden="true">call</span>
           </a>
           <a href="mailto:hello@nomadwanderers.in" aria-label="Email Nomad Wanderers">
@@ -1036,15 +1228,15 @@ function Header({
             </button>
             <button
               className="trip-option nested-trip-option"
-              onClick={() => mobileNavigate("/tours?city=Mumbai&category=Community&view=detail")}
+              onClick={() => mobileNavigate("/tours?city=Mumbai&category=Cultural")}
             >
-              Dharavi community tour
+              Mumbai community tours
             </button>
             <button
               className="trip-option nested-trip-option"
-              onClick={() => mobileNavigate("/tours?city=Mumbai&category=City&view=detail")}
+              onClick={() => mobileNavigate("/tours?city=Mumbai&category=Sightseeing")}
             >
-              Mumbai sightseeing
+              Mumbai sightseeing tours
             </button>
             <button
               className={path === "/tours" && activeCity === "Delhi" ? "active trip-option" : "trip-option"}
@@ -1205,7 +1397,7 @@ function About({ go }) {
               <span>journeys shared</span>
             </div>
             <div>
-              <b>4.9/5</b>
+              <b className="about-rating" aria-label="Five star traveller rating">★★★★★</b>
               <span>traveller rating</span>
             </div>
           </div>
@@ -1402,67 +1594,44 @@ function Home({ go, carouselTours = [] }) {
             <br />
             <em>wherever you wander.</em>
           </h1>
-          <p>
+          <p className="home-welcome-story">
             We create locally led journeys that connect you with India's people,
             places, food, and everyday stories—beyond the guidebooks.
-          </p>
           {welcomeExpanded && (
             <>
-              <p>
+              <span className="home-welcome-story-extra">
                 At Nomad Wanderers, we believe travel is about more than visiting
                 landmarks—it's about connecting with the people, stories, and
                 everyday life that make India extraordinary. Founded by a passionate
                 local guide with years of experience hosting travellers from around
                 the world, we combine iconic sights with hidden gems, authentic food,
                 cultural encounters, and local perspectives.
-              </p>
-              <p>
+              </span>
+              <span className="home-welcome-story-extra">
                 From the snow-capped valleys of Kashmir to the tranquil backwaters
                 of Kerala and the vibrant landscapes of Gujarat and Assam, our vision
                 is to showcase India's diversity through thoughtfully curated journeys.
-              </p>
-              <p>
+              </span>
+              <span className="home-welcome-story-extra">
                 Every experience is rooted in genuine local connections. We invite
                 you to experience India through the eyes of the people who call it
                 home, creating journeys that are immersive, meaningful, and memorable.
-              </p>
+              </span>
             </>
           )}
+          {" "}
           <button
             className="home-welcome-more"
             type="button"
             onClick={() => setWelcomeExpanded((current) => !current)}
             aria-expanded={welcomeExpanded}
           >
-            {welcomeExpanded ? "Less" : "More"}
+            {welcomeExpanded ? "See less" : "See more"}
           </button>
+          </p>
           <button className="primary-button" onClick={() => go("/tours")}>
             Explore our experiences <span>→</span>
           </button>
-        </div>
-        <div className="home-welcome-moments">
-          <span>Made for meaningful journeys</span>
-          <article>
-            <b>Local stories</b>
-            <p>
-              Meet the people and neighbourhoods that make every place feel
-              alive.
-            </p>
-          </article>
-          <article>
-            <b>Unhurried days</b>
-            <p>
-              Leave room for curiosity, chai stops and the moments you did not
-              plan.
-            </p>
-          </article>
-          <article>
-            <b>Thoughtful planning</b>
-            <p>
-              Travel with the comfort of one trusted team from first idea to
-              final day.
-            </p>
-          </article>
         </div>
       </section>
       <section className="section intro">
@@ -1869,8 +2038,8 @@ function Tours({ go, tours }) {
                   </strong>
                 </div>
                 <div className="highlight-list">
-                  {tour.highlights.map((highlight) => (
-                    <span key={highlight}>✓ {highlight}</span>
+                  {tour.highlights.map((highlight, index) => (
+                    <span key={`${getTourHighlightTitle(highlight)}-${index}`}>✓ {getTourHighlightTitle(highlight)}</span>
                   ))}
                 </div>
                 <button
@@ -1926,6 +2095,7 @@ function ToursV2({ go, tours }) {
     "Heritage",
     "Food",
     "Culture",
+    "Cultural",
     "Walking",
     "Adventure",
     "Shared",
@@ -2001,8 +2171,8 @@ function ToursV2({ go, tours }) {
                     </strong>
                   </div>
                   <div className="highlight-list">
-                    {tour.highlights.map((highlight) => (
-                      <span key={highlight}>✓ {highlight}</span>
+                  {tour.highlights.map((highlight, index) => (
+                    <span key={`${getTourHighlightTitle(highlight)}-${index}`}>✓ {getTourHighlightTitle(highlight)}</span>
                     ))}
                   </div>
                   <button
@@ -2066,26 +2236,33 @@ function PublicPagination({ page, total, pageSize, onChange }) {
   );
 }
 
-function ToursV3({ go, city, category = "", mode = "", tours = [] }) {
+function ToursV3({
+  go,
+  city,
+  category = "",
+  mode = "",
+  tours = [],
+  searchTerm = "",
+}) {
   const [filter, setFilter] = useState("All experiences");
-  const [search, setSearch] = useState("");
+  const search = searchTerm;
   const [page, setPage] = useState(1);
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const isUniqueExperiencesPage = category === "Unique";
-  const useExperienceFilterDropdown = isUniqueExperiencesPage || city === "Delhi";
-  const filters = city
-    ? ["All experiences", "Shared", "Private"]
-    : [
-        "All experiences",
-        "Heritage",
-        "Food",
-        "Culture",
-        "Walking",
-        "Adventure",
-        "Shared",
-        "Private",
-      ];
+  const filters = [
+    "All experiences",
+    "Heritage",
+    "Food",
+    "Culture",
+    "Walking",
+    "Adventure",
+    "Community",
+    "City",
+    "Sightseeing",
+    "Festival",
+    "Shared",
+    "Private",
+  ];
   const categoryTitle =
     category === "Unique"
       ? "Unique Experiences"
@@ -2104,18 +2281,22 @@ function ToursV3({ go, city, category = "", mode = "", tours = [] }) {
           : "Browse local experiences by the stories you want to take home—from heritage streets and food trails to culture-led walks.";
   useEffect(() => {
     setLoading(true);
+    const selectedMode = ["Shared", "Private"].includes(filter)
+      ? filter
+      : mode;
+    const selectedCategory = ["All experiences", "Shared", "Private"].includes(
+      filter,
+    )
+      ? category
+      : filter;
     const parameters = new URLSearchParams({
       page: String(page),
       page_size: "9",
     });
     if (city) parameters.set("city", city);
-    if (mode) parameters.set("mode", mode);
+    if (selectedMode) parameters.set("mode", selectedMode);
     if (search.trim()) parameters.set("search", search.trim());
-    if (category) parameters.set("category", category);
-    if (filter === "Shared" || filter === "Private")
-      parameters.set("mode", filter);
-    else if (!category && filter !== "All experiences")
-      parameters.set("category", filter);
+    if (selectedCategory) parameters.set("category", selectedCategory);
     fetch(`${apiBaseUrl}/api/tours?${parameters}`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) => {
@@ -2123,36 +2304,34 @@ function ToursV3({ go, city, category = "", mode = "", tours = [] }) {
         if (apiItems.length) setResults({ items: apiItems, total: data.total });
         else {
           const fallback = tours.filter((item) =>
+            !isMultiDayTour(item) &&
             (!city || item.city === city) &&
-            (!category || item.category === category) &&
-            (filter === "All experiences" || filter === "Shared" || filter === "Private" || item.category === filter) &&
-            (filter !== "Shared" && filter !== "Private" || item.mode === filter),
+            (!selectedCategory || item.category === selectedCategory) &&
+            (!selectedMode || item.mode === selectedMode),
           );
           setResults({ items: fallback, total: fallback.length });
         }
       })
       .catch(() => {
         const fallback = tours.filter((item) =>
+          !isMultiDayTour(item) &&
           (!city || item.city === city) &&
-          (!category || item.category === category) &&
-          (filter === "All experiences" || filter === "Shared" || filter === "Private" || item.category === filter) &&
-          (filter !== "Shared" && filter !== "Private" || item.mode === filter),
+          (!selectedCategory || item.category === selectedCategory) &&
+          (!selectedMode || item.mode === selectedMode),
         );
         setResults({ items: fallback, total: fallback.length });
       })
       .finally(() => setLoading(false));
-  }, [filter, search, page, city, category, mode, tours, useExperienceFilterDropdown]);
+  }, [filter, search, page, city, category, mode, tours]);
   useEffect(() => {
     setPage(1);
     setFilter("All experiences");
-    setSearch("");
   }, [city, category, mode]);
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
   const chooseFilter = (nextFilter) => {
     setFilter(nextFilter);
-    setPage(1);
-  };
-  const updateSearch = (value) => {
-    setSearch(value);
     setPage(1);
   };
   return (
@@ -2190,35 +2369,20 @@ function ToursV3({ go, city, category = "", mode = "", tours = [] }) {
               : "Browse local experiences by the stories you want to take home—from heritage streets and food trails to culture-led walks."}
         </p>
         <div className="tour-browser-tools">
-          <label className="tour-search">
-            <span className="material-symbols-outlined">search</span>
-            <input
-              value={search}
-              onChange={(event) => updateSearch(event.target.value)}
-              placeholder="Search experiences"
-              aria-label="Search experiences"
-            />
-          </label>
-          {useExperienceFilterDropdown ? (
-            <label className="experience-filter-select">
-              <span className="sr-only">Filter experiences</span>
-              <select value={filter} onChange={(event) => chooseFilter(event.target.value)}>
-                {filters.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
-          ) : (
-            <div className="filters" aria-label="Filter experiences">
+          <label className="experience-filter-select">
+            <span className="sr-only">Filter experiences</span>
+            <select
+              value={filter}
+              onChange={(event) => chooseFilter(event.target.value)}
+              aria-label="Filter experiences"
+            >
               {filters.map((item) => (
-                <button
-                  key={item}
-                  className={filter === item ? "selected" : ""}
-                  onClick={() => chooseFilter(item)}
-                >
+                <option key={item} value={item}>
                   {item}
-                </button>
+                </option>
               ))}
-            </div>
-          )}
+            </select>
+          </label>
         </div>
         {loading ? (
           <p className="lead">Loading experiences...</p>
@@ -2249,8 +2413,8 @@ function ToursV3({ go, city, category = "", mode = "", tours = [] }) {
                       </strong>
                     </div>
                     <div className="highlight-list">
-                      {(tour.highlights || []).map((highlight) => (
-                        <span key={highlight}>✓ {highlight}</span>
+                      {(tour.highlights || []).map((highlight, index) => (
+                        <span key={`${getTourHighlightTitle(highlight)}-${index}`}>✓ {getTourHighlightTitle(highlight)}</span>
                       ))}
                     </div>
                     <button
@@ -2294,12 +2458,11 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const selectedMode = ["Shared", "Private"].includes(mode) ? mode : "";
-  const multiDayTripType = "Weekly trip";
   const heroImage = images.rajasthanCamelTour;
   useEffect(() => {
     setLoading(true);
     const parameters = new URLSearchParams({
-      trip_type: multiDayTripType,
+      multi_day: "true",
       page: "1",
       page_size: "100",
     });
@@ -2314,7 +2477,7 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
         }
         const fallback = tours.filter(
           (item) =>
-            item.trip_type === multiDayTripType &&
+            isMultiDayTour(item) &&
             (!selectedMode || item.mode === selectedMode),
         );
         setResults({ items: fallback, total: fallback.length });
@@ -2322,7 +2485,7 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
       .catch(() => {
         const fallback = tours.filter(
           (item) =>
-            item.trip_type === multiDayTripType &&
+            isMultiDayTour(item) &&
             (!selectedMode || item.mode === selectedMode),
         );
         setResults({ items: fallback, total: fallback.length });
@@ -2398,15 +2561,15 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
                     </strong>
                   </div>
                   <div className="highlight-list">
-                    {(tour.highlights || []).map((highlight) => (
-                      <span key={highlight}>✓ {highlight}</span>
+                    {(tour.highlights || []).map((highlight, index) => (
+                      <span key={`${getTourHighlightTitle(highlight)}-${index}`}>✓ {getTourHighlightTitle(highlight)}</span>
                     ))}
                   </div>
                   <button
                     className="outline-button"
                     onClick={() =>
                       tour.id
-                        ? go(`/tours/${tour.id}`)
+                        ? go(`/trips/${tour.id}`)
                         : go(`/contact?intent=book&tour=${encodeURIComponent(tour.title)}`)
                     }
                   >
@@ -2424,6 +2587,267 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
           </div>
         )}
       </section>
+    </main>
+  );
+}
+
+function MultiDayTourDetail({
+  go,
+  tourId,
+  session = null,
+  siteSettings = defaultSiteSettings,
+  initialBooking = false,
+}) {
+  const [tour, setTour] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [bookingOpen, setBookingOpen] = useState(
+    initialBooking && Boolean(session?.token),
+  );
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    fetch(`${apiBaseUrl}/api/tours/${tourId}`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(
+            formatApiError(data.detail, "This tour could not be found."),
+          );
+        if (!isMultiDayTour(data)) throw new Error("This is not a multi-day tour.");
+        return data;
+      })
+      .then((data) => {
+        if (active) setTour(apiTourToUi(data));
+      })
+      .catch((fetchError) => {
+        if (active) setError(fetchError.message || "Unable to load this tour.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tourId]);
+
+  const closeBooking = () => {
+    setBookingOpen(false);
+    const destination = new URL(window.location.href);
+    if (destination.searchParams.has("booking")) {
+      destination.searchParams.delete("booking");
+      window.history.replaceState(
+        {},
+        "",
+        `${destination.pathname}${destination.search}${destination.hash}`,
+      );
+    }
+  };
+  const openBooking = () => {
+    if (!session?.token) {
+      const destination = new URL(window.location.href);
+      destination.searchParams.set("booking", "1");
+      go(`${destination.pathname}${destination.search}${destination.hash}`);
+      return;
+    }
+    setBookingOpen(true);
+  };
+
+  if (loading) {
+    return (
+      <main className="top-space multi-day-detail-state">
+        <p className="lead">Loading your multi-day journey...</p>
+      </main>
+    );
+  }
+  if (error || !tour) {
+    return (
+      <main className="top-space multi-day-detail-state">
+        <Eyebrow>Multi-day tours</Eyebrow>
+        <h1>We could not open this journey</h1>
+        <p className="lead">{error || "The tour is no longer available."}</p>
+        <button className="outline-button" onClick={() => go("/trips")}>
+          Back to multi-day tours
+        </button>
+      </main>
+    );
+  }
+
+  const itinerary = [...(tour.itinerary || [])].sort(
+    (left, right) => Number(left.day) - Number(right.day),
+  );
+  const galleryImages = [tour.image, ...(tour.gallery_images || [])].filter(
+    (image, index, imagesList) => image && imagesList.indexOf(image) === index,
+  );
+  const availability = tour.availability || {};
+  const pricing = tour.pricing || {};
+  const basePrice = Number(tour.price_value ?? tour.price) || 0;
+  const priceTiers = pricing.tiers || [];
+  const duration =
+    tour.duration ||
+    (tour.duration_days
+      ? `${tour.duration_days} days${tour.duration_nights !== null && tour.duration_nights !== undefined ? ` / ${tour.duration_nights} nights` : ""}`
+      : "");
+  const route = [tour.start_city || tour.city, tour.end_city]
+    .filter(Boolean)
+    .join(" → ");
+  const bookingPrices = getTourBookingPrices(tour);
+  const bookingLabel =
+    pricing.pricing_model === "on_request" ? "Send an enquiry" : "Book this tour";
+  const detailFacts = [
+    route && ["route", "Route", route],
+    duration && ["calendar_month", "Duration", duration],
+    tour.mode && ["groups", "Travel style", tour.mode],
+    tour.physicality && ["hiking", "Physicality", tour.physicality],
+    availability.min_travellers && availability.max_travellers && ["person", "Group size", `${availability.min_travellers}–${availability.max_travellers} guests`],
+    tour.languages?.length > 0 && ["translate", "Languages", tour.languages.join(", ")],
+  ].filter(Boolean);
+  const hasInclusions =
+    tour.inclusions?.length > 0 ||
+    tour.inclusion_groups?.some((group) => group.items?.length > 0) ||
+    tour.exclusions?.length > 0;
+  const multiDaySections = [
+    ["overview", "Overview"],
+    itinerary.length > 0 && ["itinerary", "Itinerary"],
+    hasInclusions && ["inclusions", "Inclusions"],
+    (tour.pricing || tour.availability || basePrice > 0) && ["pricing", "Pricing"],
+    galleryImages.length > 0 && ["gallery", "Gallery"],
+    tour.faq_items?.length > 0 && ["faqs", "FAQs"],
+  ].filter(Boolean);
+
+  return (
+    <main className="top-space multi-day-detail-page">
+      <section className="multi-day-detail-hero">
+        <img src={tour.image} alt="" />
+        <div className="multi-day-detail-hero-overlay" />
+        <div className="multi-day-detail-hero-content">
+          <button className="multi-day-back-link" type="button" onClick={() => go("/trips")}>
+            <span className="material-symbols-outlined">arrow_back</span>
+            All multi-day tours
+          </button>
+          {tour.mode && <Eyebrow>{tour.mode} multi-day journey</Eyebrow>}
+          <h1>{tour.title}</h1>
+          {route && <p>{route}</p>}
+        </div>
+      </section>
+
+      <nav className="multi-day-detail-nav" aria-label="Tour sections">
+        {multiDaySections.map(([id, label]) => (
+          <a href={`#${id}`} key={id}>{label}</a>
+        ))}
+      </nav>
+
+      <section className="section multi-day-detail-layout">
+        <div className="multi-day-detail-content">
+          <section id="overview" className="multi-day-detail-section">
+            <Eyebrow>Tour information</Eyebrow>
+            {tour.description && <p className="lead multi-day-detail-description">{tour.description}</p>}
+            {detailFacts.length > 0 && <div className="multi-day-detail-facts">
+              {detailFacts.map(([icon, label, value]) => (
+                <article key={label}>
+                  <span className="material-symbols-outlined">{icon}</span>
+                  <div><small>{label}</small><b>{value}</b></div>
+                </article>
+              ))}
+            </div>}
+            {(tour.destinations || []).length > 0 && (
+              <div className="multi-day-route-stops">
+                <h3>Your route</h3>
+                <ol>
+                  {tour.destinations.map((destination, index) => (
+                    <li key={`${destination.city}-${index}`}>
+                      <b>{destination.city}</b>
+                      {destination.nights > 0 && <span>{destination.nights} {destination.nights === 1 ? "night" : "nights"}</span>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            {normalizeTourHighlights(tour.highlights).length > 0 && (
+              <div className="multi-day-highlights">
+                <h3>Journey highlights</h3>
+                <ul>{normalizeTourHighlights(tour.highlights).map((highlight, index) => <li key={`${highlight.title}-${index}`}>{highlight.title}</li>)}</ul>
+              </div>
+            )}
+          </section>
+
+          {itinerary.length > 0 && <section id="itinerary" className="multi-day-detail-section">
+            <Eyebrow>Day by day</Eyebrow>
+            <h2>Your itinerary</h2>
+            <div className="multi-day-itinerary-display">
+              {itinerary.map((day, index) => (
+                <details key={`${day.day}-${day.title}`} open={index === 0}>
+                  <summary>
+                    <span>Day {day.day}</span>
+                    <div><b>{day.title}</b><small>{day.location}{day.overnight_location ? ` · Overnight in ${day.overnight_location}` : ""}</small></div>
+                    <span className="material-symbols-outlined">expand_more</span>
+                  </summary>
+                  <div className="multi-day-itinerary-body">
+                    {day.summary && <p>{day.summary}</p>}
+                    {day.transport?.length > 0 && <p><b>Getting around:</b> {day.transport.join(", ")}</p>}
+                    {day.activities?.length > 0 && <p><b>Experiences:</b> {day.activities.join(", ")}</p>}
+                    {day.included?.length > 0 && <p><b>Included today:</b> {day.included.join(", ")}</p>}
+                    {day.optional?.length > 0 && <p><b>Optional:</b> {day.optional.join(", ")}</p>}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </section>}
+
+          {hasInclusions && <section id="inclusions" className="multi-day-detail-section">
+            <Eyebrow>What is covered</Eyebrow>
+            <h2>Inclusions and exclusions</h2>
+            <div className="multi-day-inclusions-display">
+              {tour.inclusions?.length > 0 && <article><h3>Included</h3><ul>{tour.inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}
+              {(tour.inclusion_groups || []).filter((group) => group.items?.length > 0).map((group) => (
+                <article key={group.title}><h3>{group.title}</h3><ul>{group.items.map((item) => <li key={item}>{item}</li>)}</ul></article>
+              ))}
+              {(tour.exclusions || []).length > 0 && <article className="is-exclusions"><h3>Not included</h3><ul>{tour.exclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}
+            </div>
+          </section>}
+
+          {(tour.pricing || tour.availability || basePrice > 0) && <section id="pricing" className="multi-day-detail-section">
+            <Eyebrow>Price & availability</Eyebrow>
+            <h2>Price & availability</h2>
+            <div className="multi-day-pricing-display">
+              {(pricing.pricing_model === "on_request" || basePrice > 0) && <article>
+                <small>{pricing.pricing_model === "on_request" ? "Price" : "From"}</small>
+                <strong>{pricing.pricing_model === "on_request" ? "Price on request" : formatInr(basePrice)}</strong>
+                {pricing.pricing_model !== "on_request" && <span>per person</span>}
+              </article>}
+              {availability.booking_type && <article><small>Availability</small><b>{availability.booking_type}</b>{availability.customizable && <span>Customisable for private bookings</span>}</article>}
+            </div>
+            {pricing.pricing_model === "per_person_by_group_size" && priceTiers.length > 0 && (
+              <div className="multi-day-price-table">
+                <div><b>Group size</b><b>Price per person</b></div>
+                {priceTiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {Number(tier.travellers) === 1 ? "traveller" : "travellers"}</span><strong>{formatInr(tier.price_per_person)}</strong></div>)}
+              </div>
+            )}
+          </section>}
+
+          {galleryImages.length > 0 && <section id="gallery" className="multi-day-detail-section">
+            <Eyebrow>See the journey</Eyebrow>
+            <h2>Gallery</h2>
+            <div className="multi-day-gallery">{galleryImages.map((image, index) => <img src={image} alt={`${tour.title}, moment ${index + 1}`} key={image} />)}</div>
+          </section>}
+
+          {tour.faq_items?.length > 0 && <section id="faqs" className="multi-day-detail-section">
+            <Eyebrow>Helpful details</Eyebrow>
+            <h2>Frequently asked questions</h2>
+            <div className="multi-day-faqs">{tour.faq_items.map((faq, index) => <details key={`${faq.question}-${index}`}><summary>{faq.question}<span className="material-symbols-outlined">add</span></summary>{faq.answer && <p>{faq.answer}</p>}</details>)}</div>
+          </section>}
+        </div>
+
+        <aside className="multi-day-booking-card">
+          {tour.mode && <span>{tour.mode} journey</span>}
+          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : `From ${formatInr(basePrice)} per person`}</h2>}
+          {availability.booking_type && <p>{availability.booking_type}{availability.max_travellers ? ` · up to ${availability.max_travellers} guests` : ""}</p>}
+          <button className="primary-button" onClick={openBooking}>{bookingLabel} →</button>
+        </aside>
+      </section>
+      {bookingOpen && <BookingRequestModal tour={tour} session={session} siteSettings={siteSettings} prices={bookingPrices} onClose={closeBooking} />}
     </main>
   );
 }
@@ -2513,8 +2937,8 @@ function TripsPageV2({ go, type }) {
                       </strong>
                     </div>
                     <div className="highlight-list">
-                      {tour.highlights.map((highlight) => (
-                        <span key={highlight}>✓ {highlight}</span>
+                  {tour.highlights.map((highlight, index) => (
+                    <span key={`${getTourHighlightTitle(highlight)}-${index}`}>✓ {getTourHighlightTitle(highlight)}</span>
                       ))}
                     </div>
                     <button
@@ -2794,7 +3218,7 @@ function AdminLogin({ onAuthenticated }) {
       });
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to authenticate.");
+        throw new Error(formatApiError(body.detail, "Unable to authenticate."));
       onAuthenticated({ token: body.access_token });
     } catch (error) {
       setStatus(error.message);
@@ -2863,7 +3287,8 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
         headers,
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "Unable to load tours.");
+      if (!response.ok)
+        throw new Error(formatApiError(body.detail, "Unable to load tours."));
       setTours(body);
     } catch (error) {
       setStatus(error.message);
@@ -2884,7 +3309,7 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
       });
       if (!response.ok) {
         const body = await response.json();
-        throw new Error(body.detail || "Unable to delete the tour.");
+        throw new Error(formatApiError(body.detail, "Unable to delete the tour."));
       }
       setTours((current) => current.filter((item) => item.id !== tour.id));
       setSelectedTourIds((current) => current.filter((id) => id !== tour.id));
@@ -2919,7 +3344,10 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
         body: JSON.stringify({ tour_ids: selectedTourIds }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "Unable to delete selected tours.");
+      if (!response.ok)
+        throw new Error(
+          formatApiError(body.detail, "Unable to delete selected tours."),
+        );
       setTours((current) => current.filter((tour) => !selectedTourIds.includes(tour.id)));
       selectedTourIds.forEach(onTourDeleted);
       setStatus(`${body.deleted} tour(s) permanently deleted.`);
@@ -2939,15 +3367,27 @@ function AdminHome({ session, onTourSaved, onTourDeleted }) {
   };
   if (screen !== "list")
     return (
-      <TourEditorV2
-        tour={selectedTour}
-        session={session}
-        onCancel={() => {
-          setScreen("list");
-          setSelectedTour(null);
-        }}
-        onSaved={saved}
-      />
+      screen === "create-multi-day" || isMultiDayTour(selectedTour) ? (
+        <MultiDayTourEditor
+          tour={selectedTour}
+          session={session}
+          onCancel={() => {
+            setScreen("list");
+            setSelectedTour(null);
+          }}
+          onSaved={saved}
+        />
+      ) : (
+        <TourEditorV2
+          tour={selectedTour}
+          session={session}
+          onCancel={() => {
+            setScreen("list");
+            setSelectedTour(null);
+          }}
+          onSaved={saved}
+        />
+      )
     );
   return (
     <main className="top-space">
@@ -3028,7 +3468,7 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
     description: tour?.description || "",
     image_url: tour?.image_url || "",
     city: tour?.city || "Mumbai",
-    mode: tour?.mode || "Shared",
+    mode: ["Shared", "Private"].includes(tour?.mode) ? tour.mode : "Shared",
     category: tour?.category || "",
     duration: tour?.duration || "",
     price: tour?.price || "",
@@ -3068,7 +3508,7 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
       });
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to save the tour.");
+        throw new Error(formatApiError(body.detail, "Unable to save the tour."));
       onSaved(body);
     } catch (error) {
       setStatus(error.message);
@@ -3278,7 +3718,7 @@ function Admin({ go, onTourCreated, session }) {
         });
         const body = await response.json();
         if (!response.ok)
-          throw new Error(body.detail || "Unable to authenticate.");
+        throw new Error(formatApiError(body.detail, "Unable to authenticate."));
         setAuthenticated(true);
         setStatus("Authenticated. You can now save the tour.");
       } catch (error) {
@@ -3307,7 +3747,7 @@ function Admin({ go, onTourCreated, session }) {
       });
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to save the tour.");
+        throw new Error(formatApiError(body.detail, "Unable to save the tour."));
       onTourCreated(body);
       setForm({
         title: "",
@@ -3477,6 +3917,352 @@ function Admin({ go, onTourCreated, session }) {
           )}
         </form>
       </section>
+    </main>
+  );
+}
+
+function TourDetail({
+  go,
+  session = null,
+  siteSettings = defaultSiteSettings,
+  initialBooking = false,
+  tourId = null,
+  city = "Mumbai",
+  category = "Community",
+}) {
+  const [tour, setTour] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [bookingOpen, setBookingOpen] = useState(
+    initialBooking && Boolean(session?.token),
+  );
+
+  useEffect(() => {
+    let active = true;
+    const search = new URLSearchParams({ page: "1", page_size: "1" });
+    if (city) search.set("city", city);
+    if (category) search.set("category", category);
+    const endpoint = tourId
+      ? `${apiBaseUrl}/api/tours/${tourId}`
+      : `${apiBaseUrl}/api/tours?${search}`;
+    setLoading(true);
+    setError("");
+    fetch(endpoint, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(
+            formatApiError(body.detail, "This tour could not be found."),
+          );
+        const record = tourId ? body : body.items?.[0];
+        if (!record) throw new Error("This tour could not be found.");
+        if (isMultiDayTour(record)) throw new Error("This tour belongs in multi-day tours.");
+        return record;
+      })
+      .then((record) => {
+        if (active) setTour(apiTourToUi(record));
+      })
+      .catch((fetchError) => {
+        if (active) setError(fetchError.message || "Unable to load this tour.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tourId, city, category]);
+
+  const closeBooking = () => {
+    setBookingOpen(false);
+    const destination = new URL(window.location.href);
+    if (destination.searchParams.has("booking")) {
+      destination.searchParams.delete("booking");
+      window.history.replaceState(
+        {},
+        "",
+        `${destination.pathname}${destination.search}${destination.hash}`,
+      );
+    }
+  };
+  const openBooking = () => {
+    if (!session?.token) {
+      const destination = new URL(window.location.href);
+      destination.searchParams.set("booking", "1");
+      go(`${destination.pathname}${destination.search}${destination.hash}`);
+      return;
+    }
+    setBookingOpen(true);
+  };
+
+  if (loading) {
+    return <main className="top-space tour-detail-state"><p className="lead">Loading tour...</p></main>;
+  }
+  if (error || !tour) {
+    return (
+      <main className="top-space tour-detail-state">
+        <h1>We could not open this tour</h1>
+        <p className="lead">{error || "The tour is no longer available."}</p>
+        <button className="outline-button" onClick={() => go("/tours")}>Back to tours</button>
+      </main>
+    );
+  }
+
+  const galleryImages = [tour.image, ...(tour.gallery_images || [])].filter(
+    (image, index, imagesList) => image && imagesList.indexOf(image) === index,
+  );
+  const inclusions = (tour.inclusions || []).filter(Boolean);
+  const reviews = (tour.review_items || [])
+    .map((item) => ({
+      name: item?.name || item?.author || "",
+      review: item?.review || item?.text || "",
+    }))
+    .filter((item) => item.name || item.review);
+  const faqs = (tour.faq_items || []).filter(
+    (item) => item?.question || item?.answer,
+  );
+  const highlights = normalizeTourHighlights(tour.highlights);
+  const bookingPrices = getTourBookingPrices(tour);
+  const price = Number(tour.price_value ?? tour.price);
+  const privatePrice = Number(tour.private_price);
+  const groupPriceTables = [
+    {
+      label: "Shared tour",
+      tiers: bookingPrices.sharedTiers,
+    },
+    {
+      label: "Private tour",
+      tiers: bookingPrices.privateTiers,
+    },
+  ].filter((table) => table.tiers.length > 0);
+  const pricedGroupSizes = groupPriceTables.flatMap((table) =>
+    table.tiers.map((tier) => Number(tier.travellers)),
+  );
+  const groupSizeLimit =
+    Math.max(0, ...pricedGroupSizes) || Number(tour.capacity) || 6;
+  const hasPrivateTourOption = Boolean(
+    bookingPrices.privateTiers.length ||
+      (Number.isFinite(privatePrice) && privatePrice > 0) ||
+      tour.mode === "Private",
+  );
+  const priceRows = [
+    Number.isFinite(price) && price > 0 && {
+      label: bookingPrices.sharedTiers.length ? "Shared tour · from" : "Shared tour",
+      value: price,
+    },
+    Number.isFinite(privatePrice) && privatePrice > 0 && {
+      label: bookingPrices.privateTiers.length ? "Private tour · from" : "Private tour",
+      value: privatePrice,
+    },
+  ].filter(Boolean);
+  const hasPriceAndInclusions = priceRows.length || inclusions.length || tour.inclusion_groups?.length;
+  const startMapUrl = getGoogleMapsUrl(
+    tour.start_meeting_map_url,
+    tour.start_meeting_point,
+  );
+  const endMapUrl = getGoogleMapsUrl(
+    tour.end_meeting_map_url,
+    tour.end_meeting_point,
+  );
+  const routeMapUrl = getGoogleMapsRouteUrl(
+    tour.start_meeting_point,
+    tour.end_meeting_point,
+    startMapUrl || endMapUrl,
+  );
+  const routeMapEmbedUrl = getGoogleMapsEmbedUrl(
+    tour.start_meeting_point,
+    tour.end_meeting_point,
+  );
+  const hasMeetingInformation = Boolean(
+    tour.meeting_details ||
+      tour.start_meeting_point ||
+      tour.start_meeting_map_url ||
+      tour.end_meeting_point ||
+      tour.end_meeting_map_url,
+  );
+  const tourTabs = [
+    ["tour-info", "Tour info"],
+    hasPriceAndInclusions && ["price-inclusions", "Price & inclusions"],
+    highlights.length > 0 && ["tour-highlights", "Highlights"],
+    galleryImages.length > 0 && ["tour-gallery", "Gallery"],
+    hasMeetingInformation && ["meeting-details", "Meeting details"],
+    reviews.length > 0 && ["tour-reviews", "Reviews"],
+    faqs.length > 0 && ["tour-faqs", "FAQs"],
+  ].filter(Boolean);
+
+  return (
+    <main className="top-space">
+      <Hero image={tour.image} className="detail-hero">
+        <div className="hero-content">
+          {(tour.city || tour.category) && <Eyebrow>{[tour.city, tour.category].filter(Boolean).join(" · ")}</Eyebrow>}
+          <div className="hero-facts">
+            {tour.duration && <span>{tour.duration}</span>}
+            {tour.time_slots?.length > 0 && <span>{tour.time_slots.map(formatTourTime).join(" · ")}</span>}
+            {!tour.time_slots?.length && tour.start_time && <span>{formatTourTime(tour.start_time)}</span>}
+            {tour.mode && <span>{tour.mode}</span>}
+            {tour.trip_type && <span>{tour.trip_type}</span>}
+          </div>
+        </div>
+      </Hero>
+      <nav className="tour-section-tabs" aria-label="Tour sections">
+        {tourTabs.map(([id, label]) => <a href={`#${id}`} key={id}>{label}</a>)}
+      </nav>
+      <section className="section detail-layout" id="tour-info">
+        <div className="detail-content">
+          <Eyebrow>Tour information</Eyebrow>
+          <h2>{tour.title}</h2>
+          {tour.description && <p className="lead">{tour.description}</p>}
+          {tour.traveller_video_url && (
+            <div className="tour-video-wrap">
+              <video src={tour.traveller_video_url} controls preload="metadata">
+                Your browser does not support video playback.
+              </video>
+            </div>
+          )}
+        </div>
+        <aside className="booking-card">
+          {tour.mode && <span>{tour.mode} tour</span>}
+          {priceRows[0] && (
+            <div className="price">
+              <small>Price</small>
+              <b className="booking-price-by-mode">{formatInr(priceRows[0].value)}</b>
+              <span>per person</span>
+            </div>
+          )}
+          {inclusions.length > 0 && <ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul>}
+          <div className="tour-booking-notes">
+            <p>
+              <b>Group size: up to {groupSizeLimit}</b>
+              <span>If your group is larger, please contact Nomad Wanderers at </span>
+              <a href="tel:+919619952139">+91 96199 52139</a>.
+            </p>
+            {hasPrivateTourOption && (
+              <p className="private-tour-note">
+                If you wish to start at a different time, get picked up at a different location, or entirely customise the tour, please contact us at <a href="tel:+919619952139">+91 96199 52139</a>.
+              </p>
+            )}
+          </div>
+          <button className="primary-button" onClick={openBooking}>Book this tour →</button>
+        </aside>
+      </section>
+      {bookingOpen && <BookingRequestModal tour={tour} session={session} siteSettings={siteSettings} prices={bookingPrices} onClose={closeBooking} />}
+
+      {hasPriceAndInclusions && (
+        <section className="section tour-reference-section" id="price-inclusions">
+          <Eyebrow>Price & inclusions</Eyebrow>
+          <h2>Tour details</h2>
+          {priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.label}><div><h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
+          {groupPriceTables.length > 0 && (
+            <div className="tour-group-price-tables">
+              {groupPriceTables.map((table) => (
+                <article key={table.label}>
+                  <h3>{table.label} prices</h3>
+                  <div className="tour-group-price-table">
+                    <div><b>Travellers</b><b>Price per person</b></div>
+                    {table.tiers.map((tier) => (
+                      <div key={tier.travellers}>
+                        <span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span>
+                        <strong>{formatInr(tier.price_per_person)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {(inclusions.length > 0 || tour.inclusion_groups?.length > 0) && <div className="tour-detail-inclusions">{inclusions.length > 0 && <article><h3>Included</h3><ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}{(tour.inclusion_groups || []).map((group) => <article key={group.title}><h3>{group.title}</h3><ul>{(group.items || []).map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>}
+        </section>
+      )}
+      {highlights.length > 0 && (
+        <section className="section tour-reference-section" id="tour-highlights">
+          <Eyebrow>Highlights</Eyebrow>
+          <h2>What you will experience</h2>
+          <div className="tour-highlight-list">
+            {highlights.map((highlight, index) => (
+              <details key={`${highlight.title}-${index}`}>
+                <summary>
+                  {highlight.title}
+                  <span className="material-symbols-outlined">add</span>
+                </summary>
+                {highlight.description && <p>{highlight.description}</p>}
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+      {galleryImages.length > 0 && (
+        <section className="section gallery" id="tour-gallery">
+          <Eyebrow>Gallery</Eyebrow>
+          <h2>{tour.title}</h2>
+          <div className="gallery-grid">{galleryImages.map((image, index) => <img className={index === 0 ? "gallery-main" : ""} src={image} alt={`${tour.title} ${index + 1}`} key={image} />)}</div>
+        </section>
+      )}
+      {hasMeetingInformation && (
+        <section className="section tour-reference-section tour-meeting" id="meeting-details">
+          <Eyebrow>Meeting details</Eyebrow>
+          <h2>Where to meet</h2>
+          {tour.meeting_details && <p className="lead">{tour.meeting_details}</p>}
+          {routeMapEmbedUrl && (
+            <div className="tour-map-embed">
+              <iframe
+                title={`Google map for ${tour.title}`}
+                src={routeMapEmbedUrl}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                tabIndex="-1"
+              />
+              <a href={routeMapUrl} target="_blank" rel="noreferrer">
+                <span className="material-symbols-outlined" aria-hidden="true">map</span>
+                <span>
+                  <b>{tour.start_meeting_point && tour.end_meeting_point ? "View the start-to-end route" : "View this meeting point"}</b>
+                  <small>Open in Google Maps</small>
+                </span>
+                <span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+              </a>
+            </div>
+          )}
+          {(tour.start_meeting_point || tour.start_meeting_map_url || tour.end_meeting_point || tour.end_meeting_map_url) && (
+            <div className="tour-meeting-locations">
+              {(tour.start_meeting_point || tour.start_meeting_map_url) && (
+                <a className="tour-map-window" href={startMapUrl} target="_blank" rel="noreferrer" aria-label="Open the start meeting point in Google Maps">
+                  <span className="material-symbols-outlined" aria-hidden="true">trip_origin</span>
+                  <span>
+                    <small>Starting point</small>
+                    <b>{tour.start_meeting_point || "Open the start location"}</b>
+                    <em>View in Google Maps</em>
+                  </span>
+                  <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
+                </a>
+              )}
+              {(tour.end_meeting_point || tour.end_meeting_map_url) && (
+                <a className="tour-map-window" href={endMapUrl} target="_blank" rel="noreferrer" aria-label="Open the end meeting point in Google Maps">
+                  <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
+                  <span>
+                    <small>Ending point</small>
+                    <b>{tour.end_meeting_point || "Open the end location"}</b>
+                    <em>View in Google Maps</em>
+                  </span>
+                  <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
+                </a>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      {reviews.length > 0 && (
+        <section className="section tour-reference-section tour-reviews" id="tour-reviews">
+          <Eyebrow>Guest experiences</Eyebrow>
+          <h2>What travellers say</h2>
+          <div className="tour-reviews-grid">{reviews.map((item, index) => <blockquote key={`${item.name}-${index}`}>{item.review && <>“{item.review}”</>}{item.name && <footer>— {item.name}</footer>}</blockquote>)}</div>
+        </section>
+      )}
+      {faqs.length > 0 && (
+        <section className="section tour-reference-section" id="tour-faqs">
+          <Eyebrow>FAQs</Eyebrow>
+          <h2>Before you go</h2>
+          <div className="tour-highlight-list">{faqs.map((faq, index) => <details key={`${faq.question}-${index}`}><summary>{faq.question}<span className="material-symbols-outlined">add</span></summary>{faq.answer && <p>{faq.answer}</p>}</details>)}</div>
+        </section>
+      )}
     </main>
   );
 }
@@ -3771,21 +4557,47 @@ function Dharavi({ go, tours, session = null, siteSettings = defaultSiteSettings
 }
 
 function getTourBookingPrices(tour) {
-  const basePrice = Number(tour?.price) || 1500;
-  const existingMode = String(tour?.mode || "").toLowerCase();
-  const sharedPrice =
-    Number(tour?.shared_price) > 0
-      ? Number(tour.shared_price)
-      : existingMode === "private"
-        ? Math.max(1, Math.round(basePrice * 0.6))
-        : basePrice;
-  const privatePrice =
-    Number(tour?.private_price) > 0
-      ? Number(tour.private_price)
-      : existingMode === "private"
-        ? basePrice
-        : Math.round(basePrice * 1.8);
-  return { shared: sharedPrice, private: privatePrice };
+  const pricing = tour?.pricing || {};
+  const normalizeTiers = (tiers) =>
+    Array.isArray(tiers)
+      ? tiers
+          .map((tier) => ({
+            travellers: Number(tier?.travellers),
+            price_per_person: Number(tier?.price_per_person),
+          }))
+          .filter(
+            (tier) =>
+              Number.isInteger(tier.travellers) &&
+              tier.travellers > 0 &&
+              Number.isFinite(tier.price_per_person) &&
+              tier.price_per_person > 0,
+          )
+          .sort((left, right) => left.travellers - right.travellers)
+      : [];
+  const basePrice = Number(tour?.price_value ?? tour?.price) || 0;
+  const sharedPrice = Number(tour?.shared_price) > 0
+    ? Number(tour.shared_price)
+    : basePrice;
+  const privatePrice = Number(tour?.private_price) > 0
+    ? Number(tour.private_price)
+    : basePrice;
+  return {
+    shared: sharedPrice,
+    private: privatePrice,
+    sharedTiers: normalizeTiers(pricing.shared_tiers),
+    privateTiers: normalizeTiers(pricing.private_tiers),
+  };
+}
+
+function getTourBookingPrice(prices, bookingMode, travellers) {
+  const tiers = bookingMode === "Private"
+    ? prices?.privateTiers || []
+    : prices?.sharedTiers || [];
+  return (
+    tiers.find((tier) => tier.travellers === travellers)?.price_per_person ||
+    (bookingMode === "Private" ? prices?.private : prices?.shared) ||
+    0
+  );
 }
 
 function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteSettings, prices, onClose }) {
@@ -3800,16 +4612,60 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
   const [status, setStatus] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [bookingId, setBookingId] = useState(null);
-  const unitPrice = bookingMode === "Private" ? prices.private : prices.shared;
+  const generalTimeSlots = useMemo(
+    () =>
+      [...new Set(
+        (tour?.time_slots?.length
+          ? tour.time_slots
+          : tour?.start_time
+            ? [tour.start_time]
+            : []
+        ).filter(Boolean),
+      )],
+    [tour?.start_time, tour?.time_slots],
+  );
+  const pricingTiers = useMemo(
+    () =>
+      bookingMode === "Private"
+        ? prices?.privateTiers || []
+        : prices?.sharedTiers || [],
+    [bookingMode, prices?.privateTiers, prices?.sharedTiers],
+  );
+  const travellerOptions = useMemo(
+    () =>
+      pricingTiers.length
+        ? pricingTiers.map((tier) => tier.travellers)
+        : Array.from(
+            { length: Math.min(Math.max(Number(tour?.capacity) || 8, 8), 50) },
+            (_, index) => index + 1,
+          ),
+    [pricingTiers, tour?.capacity],
+  );
+  const availableTimeSlots = generalTimeSlots;
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState(
+    availableTimeSlots[0] || "",
+  );
+  const unitPrice = getTourBookingPrice(prices, bookingMode, travellers);
   const total = unitPrice * travellers;
   const selectedTourTitle = title || tour?.title || "Tour enquiry";
   const upiId = siteSettings?.upi_id || defaultSiteSettings.upi_id;
   const upiNumber = siteSettings?.upi_number || defaultSiteSettings.upi_number;
   const qrData = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=Nomad%20Wanderers&am=${total.toFixed(2)}&cu=INR`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(qrData)}`;
+  const paymentScannerUrl = siteSettings?.upi_qr_image_url || qrCodeUrl;
   const today = new Date().toISOString().slice(0, 10);
-  const startTimeSlot = tour?.start_time
-    ? `${tour.schedule_type === "Daily" ? "Daily" : tour.trip_type === "Festival special" ? "Festival" : "Tour"} · ${formatTourTime(tour.start_time)}`
+  useEffect(() => {
+    if (!travellerOptions.includes(travellers)) {
+      setTravellers(travellerOptions[0] || 1);
+    }
+  }, [travellerOptions, travellers]);
+  useEffect(() => {
+    if (!availableTimeSlots.includes(selectedTimeSlot)) {
+      setSelectedTimeSlot(availableTimeSlots[0] || "");
+    }
+  }, [availableTimeSlots, selectedTimeSlot]);
+  const startTimeSlot = selectedTimeSlot
+    ? `${tour.schedule_type === "Daily" ? "Daily" : tour.trip_type === "Festival special" ? "Festival" : "Tour"} · ${formatTourTime(selectedTimeSlot)}`
     : "";
   useEffect(() => {
     if (!session?.token) return undefined;
@@ -3819,7 +4675,10 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
     })
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.detail || "Unable to load your profile details.");
+        if (!response.ok)
+          throw new Error(
+            formatApiError(body.detail, "Unable to load your profile details."),
+          );
         if (!cancelled) {
           setTravellerDetails((current) => ({
             name: body.name || current.name,
@@ -3864,7 +4723,8 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
         }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.detail || "Unable to book this tour.");
+      if (!response.ok)
+        throw new Error(formatApiError(body.detail, "Unable to book this tour."));
       setBookingId(body.id || null);
       setSubmitted(true);
     } catch (error) {
@@ -3897,7 +4757,7 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
               <b>UPI payment after confirmation</b>
               <span>UPI ID: {upiId}</span>
               <span>UPI number: {upiNumber}</span>
-              <img src={qrCodeUrl} alt={`UPI QR scanner for ${upiId}`} />
+              <img src={paymentScannerUrl} alt={`UPI QR scanner for ${upiId}`} />
             </div>
             <button className="primary-button" type="button" onClick={onClose}>Done</button>
           </div>
@@ -3918,16 +4778,23 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
             <div className="form-row">
               <label>Preferred date<input name="date" required type="date" min={today} /></label>
               <label>Travellers<select name="travellers" value={travellers} onChange={(event) => setTravellers(Number(event.target.value))}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((count) => <option value={count} key={count}>{count} {count === 1 ? "traveller" : "travellers"}</option>)}
+                {travellerOptions.map((count) => <option value={count} key={count}>{count} {count === 1 ? "traveller" : "travellers"}</option>)}
               </select></label>
             </div>
-            {startTimeSlot && (
-              <label>Start time slot<input value={startTimeSlot} readOnly /></label>
+            {availableTimeSlots.length > 1 ? (
+              <label>
+                Departure time
+                <select value={selectedTimeSlot} onChange={(event) => setSelectedTimeSlot(event.target.value)}>
+                  {availableTimeSlots.map((slot) => <option value={slot} key={slot}>{formatTourTime(slot)}</option>)}
+                </select>
+              </label>
+            ) : startTimeSlot && (
+              <label>Departure time<input value={startTimeSlot} readOnly /></label>
             )}
             <label>Your name<input name="name" required value={travellerDetails.name} onChange={(event) => setTravellerDetails((current) => ({ ...current, name: event.target.value }))} placeholder="Your full name" /></label>
             <div className="form-row">
               <label>Email address<input name="email" required type="email" value={travellerDetails.email} onChange={(event) => setTravellerDetails((current) => ({ ...current, email: event.target.value }))} placeholder="you@example.com" /></label>
-              <label>Phone or WhatsApp<input name="phone" required type="tel" value={travellerDetails.phone} onChange={(event) => setTravellerDetails((current) => ({ ...current, phone: event.target.value }))} placeholder="+91 98765 43210" /></label>
+              <label>Phone or WhatsApp<input name="phone" required type="tel" value={travellerDetails.phone} onChange={(event) => setTravellerDetails((current) => ({ ...current, phone: event.target.value }))} placeholder="+91 96199 52139" /></label>
             </div>
             <label>Anything we should know?<textarea name="message" rows="3" placeholder="Accessibility needs, celebration plans, or questions..." /></label>
             <div className="booking-modal-bottom">
@@ -3940,7 +4807,7 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
                 <b>Pay by UPI after confirmation</b>
                 <span>UPI ID: {upiId}</span>
                 <span>UPI number: {upiNumber}</span>
-                <img src={qrCodeUrl} alt={`UPI QR scanner for ${upiId}`} />
+                <img src={paymentScannerUrl} alt={`UPI QR scanner for ${upiId}`} />
               </div>
             </div>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? "Booking tour…" : "Book this tour →"}</button>
@@ -3982,8 +4849,8 @@ function Contact() {
             spirit. Reach out to Raj and the team to begin your story.
           </p>
           <div className="contact-links">
-            <a href="https://wa.me/919876543210">◉ +91 98765 43210</a>
-            <a href="tel:+919876543210">☎ +91 98765 43210</a>
+            <a href="https://wa.me/919619952139">◉ +91 96199 52139</a>
+            <a href="tel:+919619952139">☎ +91 96199 52139</a>
             <a href="mailto:hello@nomadwanderers.in">
               ✉ hello@nomadwanderers.in
             </a>
@@ -4142,8 +5009,8 @@ function ContactFlow() {
           <h1>{title}</h1>
           <p>{description}</p>
           <div className="contact-links">
-            <a href="https://wa.me/919876543210">◉ Chat on WhatsApp</a>
-            <a href="tel:+919876543210">☎ +91 98765 43210</a>
+            <a href="https://wa.me/919619952139">◉ Chat on WhatsApp</a>
+            <a href="tel:+919619952139">☎ +91 96199 52139</a>
             <a href="mailto:hello@nomadwanderers.in">
               ✉ hello@nomadwanderers.in
             </a>
@@ -4203,7 +5070,7 @@ function ContactFlow() {
             </label>
             <label>
               Phone or WhatsApp
-              <input required type="tel" placeholder="+91 98765 43210" />
+              <input required type="tel" placeholder="+91 96199 52139" />
             </label>
           </div>
           {isBooking && (
@@ -4381,7 +5248,7 @@ function ContactFlowV2({ session }) {
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok)
-          throw new Error(body.detail || "Unable to load this tour.");
+          throw new Error(formatApiError(body.detail, "Unable to load this tour."));
         setTourDetails(
           body.items?.find((item) => item.title === requestedTour) ||
             body.items?.[0] ||
@@ -4399,7 +5266,7 @@ function ContactFlowV2({ session }) {
         const body = await response.json();
         if (!response.ok)
           throw new Error(
-            body.detail || "Unable to load your profile details.",
+            formatApiError(body.detail, "Unable to load your profile details."),
           );
         const form = document.querySelector(".journey-form");
         if (!form) return;
@@ -4450,7 +5317,9 @@ function ContactFlowV2({ session }) {
         });
         const booking = await response.json();
         if (!response.ok)
-          throw new Error(booking.detail || "Unable to create your booking.");
+          throw new Error(
+            formatApiError(booking.detail, "Unable to create your booking."),
+          );
         window.location.assign(`/payment?booking_id=${booking.id}`);
       } catch (error) {
         setStatus(error.message);
@@ -4488,7 +5357,9 @@ function ContactFlowV2({ session }) {
       );
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to send your request.");
+        throw new Error(
+          formatApiError(body.detail, "Unable to send your request."),
+        );
       setSent(true);
       event.currentTarget.reset();
     } catch (error) {
@@ -4531,8 +5402,8 @@ function ContactFlowV2({ session }) {
                 : "Questions, ideas, or a quick hello — send us a message and our local team will be glad to help."}
           </p>
           <div className="contact-links">
-            <a href="https://wa.me/919876543210">◉ Chat on WhatsApp</a>
-            <a href="tel:+919876543210">☎ +91 98765 43210</a>
+            <a href="https://wa.me/919619952139">◉ Chat on WhatsApp</a>
+            <a href="tel:+919619952139">☎ +91 96199 52139</a>
             <a href="mailto:hello@nomadwanderers.in">
               ✉ hello@nomadwanderers.in
             </a>
@@ -4607,7 +5478,7 @@ function ContactFlowV2({ session }) {
                 name="phone"
                 required
                 type="tel"
-                placeholder="+91 98765 43210"
+                placeholder="+91 96199 52139"
               />
             </label>
           </div>
@@ -4787,7 +5658,7 @@ function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitti
   const bookingPrices = getTourBookingPrices(tour);
   const price = bookingMode === "Private" ? bookingPrices.private : bookingPrices.shared;
   const total = price * travellers;
-  const highlights = tour?.highlights || [];
+  const highlights = normalizeTourHighlights(tour?.highlights);
 
   return (
     <main className="top-space booking-experience-shell">
@@ -4845,9 +5716,9 @@ function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitti
                 </div>
                 <div className="booking-itinerary-list">
                   {highlights.map((highlight, index) => (
-                    <div className="booking-itinerary-item" key={highlight}>
+                    <div className="booking-itinerary-item" key={`${highlight.title}-${index}`}>
                       <b>{String(index + 1).padStart(2, "0")}</b>
-                      <p>{highlight}</p>
+                      <p><strong>{highlight.title}</strong>{highlight.description && <span>{highlight.description}</span>}</p>
                     </div>
                   ))}
                 </div>
@@ -4879,7 +5750,7 @@ function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitti
             <label>Your name<input name="name" required placeholder="Your full name" /></label>
             <div className="form-row">
               <label>Email address<input name="email" required type="email" placeholder="you@example.com" /></label>
-              <label>Phone or WhatsApp<input name="phone" required type="tel" placeholder="+91 98765 43210" /></label>
+              <label>Phone or WhatsApp<input name="phone" required type="tel" placeholder="+91 96199 52139" /></label>
             </div>
             <label>Anything we should know?<textarea name="message" rows="3" placeholder="Accessibility needs, celebration plans, or questions..." /></label>
             <div className="booking-price-summary"><span>From ₹{price.toLocaleString("en-IN")} × {travellers}</span><b>₹{total.toLocaleString("en-IN")}</b><small>Final amount is confirmed with availability.</small></div>
@@ -4966,7 +5837,9 @@ function AdminDashboardV2({
   const [settingsForm, setSettingsForm] = useState({
     upi_id: siteSettings?.upi_id || defaultSiteSettings.upi_id,
     upi_number: siteSettings?.upi_number || defaultSiteSettings.upi_number,
+    upi_qr_image_url: siteSettings?.upi_qr_image_url || "",
   });
+  const [paymentScannerFile, setPaymentScannerFile] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [totals, setTotals] = useState({
     tours: 0,
@@ -5018,8 +5891,10 @@ function AdminDashboardV2({
       }
       if (responses.some((response) => !response.ok))
         throw new Error(
-          bodies.find((body) => body.detail)?.detail ||
+          formatApiError(
+            bodies.find((body) => body.detail)?.detail,
             "Unable to load the dashboard.",
+          ),
         );
       setTours(bodies[0].items);
       setEnquiries(bodies[1].items);
@@ -5031,6 +5906,7 @@ function AdminDashboardV2({
       setSettingsForm({
         upi_id: bodies[7].upi_id || defaultSiteSettings.upi_id,
         upi_number: bodies[7].upi_number || defaultSiteSettings.upi_number,
+        upi_qr_image_url: bodies[7].upi_qr_image_url || "",
       });
       setCarouselTours(bodies[8].tours || []);
       setSelectedCarouselIds(bodies[8].tour_ids || []);
@@ -5088,12 +5964,33 @@ function AdminDashboardV2({
     setSavingSettings(true);
     setStatus("");
     try {
+      let paymentScannerUrl = settingsForm.upi_qr_image_url || "";
+      if (paymentScannerFile) {
+        const uploadData = new FormData();
+        uploadData.append("image", paymentScannerFile);
+        const uploadResponse = await fetch(`${apiBaseUrl}/api/admin/payment-scanner`, {
+          method: "POST",
+          headers,
+          body: uploadData,
+        });
+        const uploadBody = await uploadResponse.json().catch(() => ({}));
+        if (uploadResponse.status === 401) {
+          onSessionExpired();
+          return;
+        }
+        if (!uploadResponse.ok)
+          throw new Error(
+            formatApiError(uploadBody.detail, "Unable to upload the payment scanner."),
+          );
+        paymentScannerUrl = uploadBody.image_url;
+      }
       const response = await fetch(`${apiBaseUrl}/api/admin/settings`, {
         method: "PUT",
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({
           upi_id: settingsForm.upi_id.trim(),
           upi_number: settingsForm.upi_number.trim(),
+          upi_qr_image_url: paymentScannerUrl,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -5101,10 +5998,14 @@ function AdminDashboardV2({
         onSessionExpired();
         return;
       }
-      if (!response.ok) throw new Error(body.detail || "Unable to save UPI details.");
+      if (!response.ok)
+        throw new Error(
+          formatApiError(body.detail, "Unable to save UPI details."),
+        );
       setSettingsForm(body);
+      setPaymentScannerFile(null);
       onSiteSettingsSaved(body);
-      setStatus("UPI details updated successfully.");
+      setStatus("UPI details and payment scanner updated successfully.");
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -5136,7 +6037,10 @@ function AdminDashboardV2({
         onSessionExpired();
         return;
       }
-      if (!response.ok) throw new Error(body.detail || "Unable to save carousel tours.");
+      if (!response.ok)
+        throw new Error(
+          formatApiError(body.detail, "Unable to save carousel tours."),
+        );
       setCarouselTours(body.tours || []);
       setSelectedCarouselIds(body.tour_ids || []);
       const toursById = new Map((body.tours || []).map((tour) => [tour.id, tour]));
@@ -5200,7 +6104,10 @@ function AdminDashboardV2({
         body: JSON.stringify({ tour_ids: selectedTourIds }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "Unable to delete selected tours.");
+      if (!response.ok)
+        throw new Error(
+          formatApiError(body.detail, "Unable to delete selected tours."),
+        );
       setTours((current) => current.filter((tour) => !selectedTourIds.includes(tour.id)));
       selectedTourIds.forEach(onTourDeleted);
       setSelectedTourIds([]);
@@ -5222,7 +6129,9 @@ function AdminDashboardV2({
       );
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to update booking.");
+        throw new Error(
+          formatApiError(body.detail, "Unable to update booking."),
+        );
       setBookings((current) =>
         current.map((item) => (item.id === body.id ? body : item)),
       );
@@ -5281,6 +6190,17 @@ function AdminDashboardV2({
             <button onClick={onManageTeam}>Team access</button>
             {activeTab === "tours" && (
               <button
+                className="admin-multi-day-button"
+                onClick={() => setScreen("create-multi-day")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  route
+                </span>
+                Add multi-day tour
+              </button>
+            )}
+            {activeTab === "tours" && (
+              <button
                 className="primary-button"
                 onClick={() => setScreen("create")}
               >
@@ -5293,7 +6213,7 @@ function AdminDashboardV2({
           <div className="admin-settings-copy">
             <Eyebrow>Payment settings</Eyebrow>
             <h2 id="payment-settings-title">UPI details</h2>
-            <p>These details appear in the booking confirmation and generate the amount-aware UPI scanner.</p>
+            <p>These details and the uploaded payment scanner appear wherever travellers pay for a booking.</p>
           </div>
           <form className="admin-settings-form" onSubmit={saveSettings}>
             <label>
@@ -5311,9 +6231,40 @@ function AdminDashboardV2({
                 required
                 value={settingsForm.upi_number}
                 onChange={(event) => setSettingsForm((current) => ({ ...current, upi_number: event.target.value }))}
-                placeholder="+91 98765 43210"
+                placeholder="+91 96199 52139"
               />
             </label>
+            <label className="admin-payment-scanner-field">
+              Payment scanner (UPI QR image)
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => setPaymentScannerFile(event.target.files?.[0] || null)}
+              />
+              <small>Upload a JPEG, PNG, or WebP image up to 5 MB. It will be shown during booking payment.</small>
+            </label>
+            {paymentScannerFile && (
+              <p className="admin-payment-scanner-pending">
+                New scanner selected: <b>{paymentScannerFile.name}</b>. Save UPI details to publish it.
+              </p>
+            )}
+            {settingsForm.upi_qr_image_url && (
+              <div className="admin-payment-scanner-preview">
+                <img src={settingsForm.upi_qr_image_url} alt="Current payment scanner" />
+                <div>
+                  <b>Current payment scanner</b>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentScannerFile(null);
+                      setSettingsForm((current) => ({ ...current, upi_qr_image_url: "" }));
+                    }}
+                  >
+                    Remove scanner (save changes)
+                  </button>
+                </div>
+              </div>
+            )}
             <button className="primary-button" type="submit" disabled={savingSettings}>
               {savingSettings ? "Saving…" : "Save UPI details →"}
             </button>
@@ -5684,24 +6635,63 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     description: tour?.description || "",
     image_url: tour?.image_url || "",
     city: tour?.city || "Mumbai",
-    mode: tour?.mode || "Shared",
+    mode: ["Shared", "Private"].includes(tour?.mode) ? tour.mode : "Shared",
     trip_type: tour?.trip_type || "One-day trip",
     category: tour?.category || "",
     duration: tour?.duration || "",
-    price: tour?.price || "",
+    shared_pricing_tiers: (tour?.pricing?.shared_tiers?.length
+      ? tour.pricing.shared_tiers
+      : [{ travellers: 1, price_per_person: tour?.price || "" }]
+    ).map((tier) => ({
+      travellers: tier?.travellers || 1,
+      price_per_person: tier?.price_per_person || "",
+    })),
+    private_pricing_tiers: (tour?.pricing?.private_tiers?.length
+      ? tour.pricing.private_tiers
+      : [{ travellers: 1, price_per_person: tour?.private_price || tour?.price || "" }]
+    ).map((tier) => ({
+      travellers: tier?.travellers || 1,
+      price_per_person: tier?.price_per_person || "",
+    })),
     capacity: tour?.capacity || 20,
     schedule_type: tour?.schedule_type || "Specific date",
     departure_date: tour?.departure_date || "",
-    start_time: tour?.start_time || "",
+    time_slots: tour?.time_slots?.length
+      ? tour.time_slots
+      : tour?.start_time
+        ? [tour.start_time]
+        : [""],
     guide_name: tour?.guide_name || "",
-    highlights: (tour?.highlights || []).join(", "),
+    highlights: (tour?.highlights?.length
+      ? tour.highlights
+      : [{ title: "", description: "" }]
+    ).map((highlight) => ({
+      title: getTourHighlightTitle(highlight),
+      description:
+        typeof highlight === "string" ? "" : highlight?.description || "",
+    })),
     inclusions: (tour?.inclusions || []).join(", "),
     gallery_images: (tour?.gallery_images || []).join("\n"),
     meeting_details: tour?.meeting_details || "",
+    start_meeting_point: tour?.start_meeting_point || "",
+    start_meeting_map_url: tour?.start_meeting_map_url || "",
+    end_meeting_point: tour?.end_meeting_point || "",
+    end_meeting_map_url: tour?.end_meeting_map_url || "",
     traveller_video_url: tour?.traveller_video_url || "",
-    private_price: tour?.private_price || "",
-    faq_items: JSON.stringify(tour?.faq_items || [], null, 2),
-    review_items: JSON.stringify(tour?.review_items || [], null, 2),
+    faq_items: (tour?.faq_items?.length
+      ? tour.faq_items
+      : [{ question: "", answer: "" }]
+    ).map((item) => ({
+      question: item?.question || "",
+      answer: item?.answer || "",
+    })),
+    review_items: (tour?.review_items?.length
+      ? tour.review_items
+      : [{ name: "", review: "" }]
+    ).map((item) => ({
+      name: item?.name || item?.author || "",
+      review: item?.review || item?.text || "",
+    })),
     tag: tour?.tag || "",
     featured: tour?.featured || false,
     dark: tour?.dark || false,
@@ -5714,32 +6704,243 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
   const [saving, setSaving] = useState(false);
   const update = (field, value) =>
     setForm((current) => ({ ...current, [field]: value }));
+  const updateTimeSlot = (index, value) => {
+    setForm((current) => ({
+      ...current,
+      time_slots: current.time_slots.map((slot, slotIndex) =>
+        slotIndex === index ? value : slot,
+      ),
+    }));
+  };
+  const addTimeSlot = () => {
+    setForm((current) => ({ ...current, time_slots: [...current.time_slots, ""] }));
+  };
+  const removeTimeSlot = (index) => {
+    setForm((current) => ({
+      ...current,
+      time_slots: current.time_slots.filter((_, slotIndex) => slotIndex !== index),
+    }));
+  };
+  const updatePricingTier = (field, index, tierField, value) => {
+    setForm((current) => ({
+      ...current,
+      [field]: current[field].map((tier, tierIndex) =>
+        tierIndex === index ? { ...tier, [tierField]: value } : tier,
+      ),
+    }));
+  };
+  const addPricingTier = (field) => {
+    setForm((current) => {
+      const usedTravellerCounts = new Set(
+        current[field].map((tier) => Number(tier.travellers)),
+      );
+      let nextTravellerCount = 1;
+      while (usedTravellerCounts.has(nextTravellerCount)) nextTravellerCount += 1;
+      return {
+        ...current,
+        [field]: [
+          ...current[field],
+          { travellers: nextTravellerCount, price_per_person: "" },
+        ],
+      };
+    });
+  };
+  const removePricingTier = (field, index) => {
+    setForm((current) => ({
+      ...current,
+      [field]: current[field].filter((_, tierIndex) => tierIndex !== index),
+    }));
+  };
+  const updateHighlight = (index, field, value) => {
+    setForm((current) => ({
+      ...current,
+      highlights: current.highlights.map((highlight, highlightIndex) =>
+        highlightIndex === index ? { ...highlight, [field]: value } : highlight,
+      ),
+    }));
+  };
+  const addHighlight = () => {
+    setForm((current) => ({
+      ...current,
+      highlights: [...current.highlights, { title: "", description: "" }],
+    }));
+  };
+  const removeHighlight = (index) => {
+    setForm((current) => ({
+      ...current,
+      highlights: current.highlights.filter(
+        (_, highlightIndex) => highlightIndex !== index,
+      ),
+    }));
+  };
+  const moveHighlight = (index, direction) => {
+    setForm((current) => {
+      const destination = index + direction;
+      if (destination < 0 || destination >= current.highlights.length) {
+        return current;
+      }
+      const highlights = [...current.highlights];
+      [highlights[index], highlights[destination]] = [
+        highlights[destination],
+        highlights[index],
+      ];
+      return { ...current, highlights };
+    });
+  };
+  const updateFaq = (index, field, value) => {
+    setForm((current) => ({
+      ...current,
+      faq_items: current.faq_items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
+  const updateReview = (index, field, value) => {
+    setForm((current) => ({
+      ...current,
+      review_items: current.review_items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
+  const addFaq = () => {
+    setForm((current) => ({
+      ...current,
+      faq_items: [...current.faq_items, { question: "", answer: "" }],
+    }));
+  };
+  const addReview = () => {
+    setForm((current) => ({
+      ...current,
+      review_items: [...current.review_items, { name: "", review: "" }],
+    }));
+  };
+  const removeFaq = (index) => {
+    setForm((current) => ({
+      ...current,
+      faq_items: current.faq_items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
+  const removeReview = (index) => {
+    setForm((current) => ({
+      ...current,
+      review_items: current.review_items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
   const submit = async (event) => {
     event.preventDefault();
-    setSaving(true);
     setStatus("");
+    const normalizePricingTiers = (tiers) =>
+      tiers.map((tier) => ({
+        travellers: Number(tier.travellers),
+        price_per_person: Number(tier.price_per_person),
+      }));
+    const sharedPricingTiers = normalizePricingTiers(form.shared_pricing_tiers);
+    const privatePricingTiers = normalizePricingTiers(form.private_pricing_tiers);
+    const invalidPricingTier = (tiers) =>
+      tiers.find(
+        (tier) =>
+          !Number.isInteger(tier.travellers) ||
+          tier.travellers < 1 ||
+          !Number.isFinite(tier.price_per_person) ||
+          tier.price_per_person <= 0,
+      );
+    const hasDuplicateTravellerCount = (tiers) =>
+      new Set(tiers.map((tier) => tier.travellers)).size !== tiers.length;
+    const invalidSharedTier = invalidPricingTier(sharedPricingTiers);
+    const invalidPrivateTier = invalidPricingTier(privatePricingTiers);
+    if (invalidSharedTier || invalidPrivateTier) {
+      const invalidTier = invalidSharedTier || invalidPrivateTier;
+      const tourStyle = invalidSharedTier ? "Shared" : "Private";
+      setStatus(
+        `${tourStyle} tour price for ${invalidTier.travellers || "this"} ${invalidTier.travellers === 1 ? "person" : "people"} is required and must be greater than zero.`,
+      );
+      return;
+    }
+    if (
+      hasDuplicateTravellerCount(sharedPricingTiers) ||
+      hasDuplicateTravellerCount(privatePricingTiers)
+    ) {
+      setStatus("Each group size can be added only once for shared and private prices.");
+      return;
+    }
+    const highlights = form.highlights.map((highlight) => ({
+      title: highlight.title.trim(),
+      description: highlight.description.trim(),
+    }));
+    const incompleteHighlightIndex = highlights.findIndex(
+      (highlight) => Boolean(highlight.title) !== Boolean(highlight.description),
+    );
+    if (incompleteHighlightIndex >= 0) {
+      setStatus(
+        `Highlight ${incompleteHighlightIndex + 1}: complete both the title and description.`,
+      );
+      return;
+    }
+    const faqItems = form.faq_items.map((item) => ({
+      question: item.question.trim(),
+      answer: item.answer.trim(),
+    }));
+    const reviewItems = form.review_items.map((item) => ({
+      name: item.name.trim(),
+      review: item.review.trim(),
+    }));
+    const incompleteFaqIndex = faqItems.findIndex(
+      (item) => Boolean(item.question) !== Boolean(item.answer),
+    );
+    if (incompleteFaqIndex >= 0) {
+      setStatus(`FAQ ${incompleteFaqIndex + 1}: complete both the question and answer.`);
+      return;
+    }
+    const incompleteReviewIndex = reviewItems.findIndex(
+      (item) => Boolean(item.name) !== Boolean(item.review),
+    );
+    if (incompleteReviewIndex >= 0) {
+      setStatus(`Review ${incompleteReviewIndex + 1}: complete both the traveller name and review.`);
+      return;
+    }
+    setSaving(true);
+    const timeSlots = [...new Set(
+      form.time_slots.map((slot) => slot.trim()).filter(Boolean),
+    )];
+    const {
+      shared_pricing_tiers: _sharedPricingTiers,
+      private_pricing_tiers: _privatePricingTiers,
+      ...formValues
+    } = form;
     const payload = {
-      ...form,
-      price: Number(form.price),
+      ...formValues,
+      price: Math.min(...sharedPricingTiers.map((tier) => tier.price_per_person)),
       capacity: Number(form.capacity),
       departure_date:
         form.schedule_type === "Daily" ? null : form.departure_date || null,
-      start_time: form.start_time || null,
+      start_time: timeSlots[0] || null,
+      time_slots: timeSlots,
       guide_name: form.guide_name.trim() || null,
-      highlights: form.highlights
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
+      highlights: highlights.filter(
+        (highlight) => highlight.title && highlight.description,
+      ),
       inclusions: form.inclusions.split(",").map((item) => item.trim()).filter(Boolean),
       gallery_images: form.gallery_images
         .split("\n")
         .map((item) => item.trim())
         .filter(Boolean),
       meeting_details: form.meeting_details.trim(),
+      start_meeting_point: form.start_meeting_point.trim(),
+      start_meeting_map_url: form.start_meeting_map_url.trim() || null,
+      end_meeting_point: form.end_meeting_point.trim(),
+      end_meeting_map_url: form.end_meeting_map_url.trim() || null,
       traveller_video_url: form.traveller_video_url.trim() || null,
-      private_price: form.private_price ? Number(form.private_price) : null,
-      faq_items: JSON.parse(form.faq_items || "[]"),
-      review_items: JSON.parse(form.review_items || "[]"),
+      private_price: Math.min(...privatePricingTiers.map((tier) => tier.price_per_person)),
+      pricing: {
+        currency: "INR",
+        pricing_model: "per_person_by_group_size",
+        tiers: sharedPricingTiers,
+        shared_tiers: sharedPricingTiers,
+        private_tiers: privatePricingTiers,
+      },
+      faq_items: faqItems.filter((item) => item.question && item.answer),
+      review_items: reviewItems.filter((item) => item.name && item.review),
     };
     try {
       if (imageFile) {
@@ -5756,7 +6957,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         const uploadBody = await uploadResponse.json();
         if (!uploadResponse.ok)
           throw new Error(
-            uploadBody.detail || "Unable to upload the tour image.",
+            formatApiError(uploadBody.detail, "Unable to upload the tour image."),
           );
         payload.image_url = uploadBody.image_url;
       } else if (!tour) {
@@ -5768,7 +6969,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           data.append("image", file);
           const response = await fetch(`${apiBaseUrl}/api/admin/tour-images`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` }, body: data });
           const body = await response.json();
-          if (!response.ok) throw new Error(body.detail || "Unable to upload a gallery image.");
+          if (!response.ok) throw new Error(formatApiError(body.detail, "Unable to upload a gallery image."));
           return body.image_url;
         }));
         payload.gallery_images = uploadedImages;
@@ -5778,7 +6979,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         data.append("video", videoFile);
         const response = await fetch(`${apiBaseUrl}/api/admin/tour-videos`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` }, body: data });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "Unable to upload the traveller video.");
+        if (!response.ok) throw new Error(formatApiError(body.detail, "Unable to upload the traveller video."));
         payload.traveller_video_url = body.video_url;
       }
       const response = await fetch(
@@ -5794,7 +6995,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       );
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to save the tour.");
+        throw new Error(formatApiError(body.detail, "Unable to save the tour."));
       onSaved(body);
     } catch (error) {
       setStatus(error.message);
@@ -5802,6 +7003,12 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       setSaving(false);
     }
   };
+  const groupSizeOptions = Array.from(
+    {
+      length: Math.min(Math.max(Number(form.capacity) || 6, 6), 50),
+    },
+    (_, index) => index + 1,
+  );
   return (
     <main className="top-space">
       <section className="section admin-editor">
@@ -5853,12 +7060,13 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           </label>
           <label>
             Experience mode
-            <input
-              required
+            <select
               value={form.mode}
               onChange={(event) => update("mode", event.target.value)}
-              placeholder="Car + Walking, Bicycle, Shared..."
-            />
+            >
+              <option>Shared</option>
+              <option>Private</option>
+            </select>
           </label>
           <label>
             Description
@@ -5892,12 +7100,24 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           </label>
           <label>
             Category
-            <input
+            <select
               required
               value={form.category}
               onChange={(event) => update("category", event.target.value)}
-              placeholder="City Sightseeing, Food & Culture..."
-            />
+            >
+              <option value="" disabled>Select a category</option>
+              <option value="Community">Community</option>
+              <option value="Sightseeing">Sightseeing</option>
+              <option value="Unique">Unique experiences</option>
+              <option value="Heritage">Heritage</option>
+              <option value="Food">Food</option>
+              <option value="Culture">Culture</option>
+              <option value="Walking">Walking</option>
+              <option value="Adventure">Adventure</option>
+              <option value="Festival">Festival</option>
+              <option value="Cultural">Cultural (legacy)</option>
+              <option value="City">City (legacy)</option>
+            </select>
           </label>
           <label>
             Duration
@@ -5908,17 +7128,145 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               placeholder="4 hours"
             />
           </label>
-          <label>
-            Price per person (INR)
-            <input
-              required
-              type="number"
-              min="1"
-              step="1"
-              value={form.price}
-              onChange={(event) => update("price", event.target.value)}
-            />
-          </label>
+          <fieldset className="admin-pricing-section">
+            <legend>Prices by group size</legend>
+            <small>
+              Set the price per person for every group size. Use Departure time
+              slots below for all booking times.
+            </small>
+            <div className="admin-pricing-mode-grid">
+              <section className="admin-pricing-mode">
+                <h3>Shared tour</h3>
+                <div className="admin-pricing-tier-list">
+                  {form.shared_pricing_tiers.map((tier, index) => (
+                    <div className="admin-pricing-tier-row" key={index}>
+                      <label>
+                        Travellers
+                        <select
+                          value={tier.travellers}
+                          onChange={(event) =>
+                            updatePricingTier(
+                              "shared_pricing_tiers",
+                              index,
+                              "travellers",
+                              event.target.value,
+                            )
+                          }
+                        >
+                          {groupSizeOptions.map((count) => (
+                            <option value={count} key={count}>
+                              {count} {count === 1 ? "person" : "people"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        INR per person
+                        <input
+                          required
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={tier.price_per_person}
+                          onChange={(event) =>
+                            updatePricingTier(
+                              "shared_pricing_tiers",
+                              index,
+                              "price_per_person",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="2250"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="repeat-remove"
+                        disabled={form.shared_pricing_tiers.length === 1}
+                        onClick={() => removePricingTier("shared_pricing_tiers", index)}
+                        aria-label={`Remove shared price for ${tier.travellers} travellers`}
+                      >
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="repeat-add"
+                  onClick={() => addPricingTier("shared_pricing_tiers")}
+                >
+                  <span className="material-symbols-outlined">add</span>
+                  Add shared price
+                </button>
+              </section>
+              <section className="admin-pricing-mode">
+                <h3>Private tour</h3>
+                <div className="admin-pricing-tier-list">
+                  {form.private_pricing_tiers.map((tier, index) => (
+                    <div className="admin-pricing-tier-row" key={index}>
+                      <label>
+                        Travellers
+                        <select
+                          value={tier.travellers}
+                          onChange={(event) =>
+                            updatePricingTier(
+                              "private_pricing_tiers",
+                              index,
+                              "travellers",
+                              event.target.value,
+                            )
+                          }
+                        >
+                          {groupSizeOptions.map((count) => (
+                            <option value={count} key={count}>
+                              {count} {count === 1 ? "person" : "people"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        INR per person
+                        <input
+                          required
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={tier.price_per_person}
+                          onChange={(event) =>
+                            updatePricingTier(
+                              "private_pricing_tiers",
+                              index,
+                              "price_per_person",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="3800"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="repeat-remove"
+                        disabled={form.private_pricing_tiers.length === 1}
+                        onClick={() => removePricingTier("private_pricing_tiers", index)}
+                        aria-label={`Remove private price for ${tier.travellers} travellers`}
+                      >
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="repeat-add"
+                  onClick={() => addPricingTier("private_pricing_tiers")}
+                >
+                  <span className="material-symbols-outlined">add</span>
+                  Add private price
+                </button>
+              </section>
+            </div>
+          </fieldset>
           <label>
             Group capacity
             <input
@@ -5944,15 +7292,38 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               below.
             </small>
           </label>
-          <label>
-            Start time
-            <input
-              required
-              type="time"
-              value={form.start_time}
-              onChange={(event) => update("start_time", event.target.value)}
-            />
-          </label>
+          <fieldset className="tour-time-slots-field">
+            <legend>Departure time slots</legend>
+            <small>Add every departure time travellers can choose from.</small>
+            <div className="tour-time-slots-list">
+              {form.time_slots.map((slot, index) => (
+                <div key={index}>
+                  <label>
+                    Time {index + 1}
+                    <input
+                      required
+                      type="time"
+                      value={slot}
+                      onChange={(event) => updateTimeSlot(index, event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="repeat-remove"
+                    disabled={form.time_slots.length === 1}
+                    onClick={() => removeTimeSlot(index)}
+                    aria-label={`Remove time slot ${index + 1}`}
+                  >
+                    <span className="material-symbols-outlined">delete</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="repeat-add" onClick={addTimeSlot}>
+              <span className="material-symbols-outlined">add</span>
+              Add another time slot
+            </button>
+          </fieldset>
           {form.schedule_type === "Specific date" && (
             <label>
               Departure date
@@ -5974,14 +7345,74 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               placeholder="Aarav Mehta"
             />
           </label>
-          <label>
-            Highlights <small>(comma-separated)</small>
-            <input
-              value={form.highlights}
-              onChange={(event) => update("highlights", event.target.value)}
-              placeholder="Gateway of India, Marine Drive..."
-            />
-          </label>
+          <fieldset className="admin-repeat-section admin-highlights-section">
+            <legend>Highlights</legend>
+            <small>
+              Add each highlight in display order: title on the left and the
+              traveller-facing description on the right.
+            </small>
+            <div className="admin-highlight-list">
+              {form.highlights.map((highlight, index) => (
+                <div className="admin-highlight-row" key={index}>
+                  <span className="admin-highlight-order">{index + 1}</span>
+                  <label>
+                    Highlight title
+                    <input
+                      value={highlight.title}
+                      onChange={(event) =>
+                        updateHighlight(index, "title", event.target.value)
+                      }
+                      placeholder="Gateway of India"
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      rows="3"
+                      value={highlight.description}
+                      onChange={(event) =>
+                        updateHighlight(index, "description", event.target.value)
+                      }
+                      placeholder="Stand beneath Mumbai's most iconic monument..."
+                    />
+                  </label>
+                  <div className="admin-highlight-actions">
+                    <button
+                      type="button"
+                      className="repeat-move"
+                      disabled={index === 0}
+                      onClick={() => moveHighlight(index, -1)}
+                      aria-label={`Move highlight ${index + 1} up`}
+                    >
+                      <span className="material-symbols-outlined">arrow_upward</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="repeat-move"
+                      disabled={index === form.highlights.length - 1}
+                      onClick={() => moveHighlight(index, 1)}
+                      aria-label={`Move highlight ${index + 1} down`}
+                    >
+                      <span className="material-symbols-outlined">arrow_downward</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="repeat-remove"
+                      disabled={form.highlights.length === 1}
+                      onClick={() => removeHighlight(index)}
+                      aria-label={`Remove highlight ${index + 1}`}
+                    >
+                      <span className="material-symbols-outlined">delete</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="repeat-add" onClick={addHighlight}>
+              <span className="material-symbols-outlined">add</span>
+              Add highlight
+            </button>
+          </fieldset>
           <label>
             Inclusions <small>(comma-separated)</small>
             <input value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} placeholder="Local guide, water, entry fees..." />
@@ -6010,18 +7441,108 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             Meeting details
             <textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Meeting point, start time and end point..." />
           </label>
-          <label>
-            Private-tour price (INR) <small>(optional)</small>
-            <input type="number" min="1" step="1" value={form.private_price} onChange={(event) => update("private_price", event.target.value)} />
-          </label>
-          <label>
-            FAQs <small>(JSON array: [{'{'}"question":"...","answer":"..."{'}'}])</small>
-            <textarea rows="5" value={form.faq_items} onChange={(event) => update("faq_items", event.target.value)} />
-          </label>
-          <label>
-            Reviews <small>(JSON array: [{'{'}"name":"...","review":"..."{'}'}])</small>
-            <textarea rows="5" value={form.review_items} onChange={(event) => update("review_items", event.target.value)} />
-          </label>
+          <fieldset className="admin-meeting-locations">
+            <legend>Start and end meeting locations</legend>
+            <small>In Google Maps, search the location, tap <b>Share</b>, then copy and paste its link here. Both map links are optional.</small>
+            <div>
+              <label>
+                Start meeting point
+                <input value={form.start_meeting_point} onChange={(event) => update("start_meeting_point", event.target.value)} placeholder="e.g. Gateway of India entrance" />
+              </label>
+              <label>
+                Start Google Maps link
+                <input type="url" value={form.start_meeting_map_url} onChange={(event) => update("start_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
+              </label>
+              <label>
+                End meeting point
+                <input value={form.end_meeting_point} onChange={(event) => update("end_meeting_point", event.target.value)} placeholder="e.g. Chhatrapati Shivaji Maharaj Terminus" />
+              </label>
+              <label>
+                End Google Maps link
+                <input type="url" value={form.end_meeting_map_url} onChange={(event) => update("end_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
+              </label>
+            </div>
+          </fieldset>
+          <fieldset className="admin-repeat-section">
+            <legend>FAQs</legend>
+            <small>Add questions on the left and their answers on the right.</small>
+            <div className="admin-faq-review-list">
+              {form.faq_items.map((faq, index) => (
+                <div className="admin-faq-review-row" key={index}>
+                  <label>
+                    Question
+                    <input
+                      value={faq.question}
+                      onChange={(event) => updateFaq(index, "question", event.target.value)}
+                      placeholder="Can this tour be customised?"
+                    />
+                  </label>
+                  <label>
+                    Answer
+                    <textarea
+                      rows="3"
+                      value={faq.answer}
+                      onChange={(event) => updateFaq(index, "answer", event.target.value)}
+                      placeholder="Explain the available options."
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="repeat-remove"
+                    disabled={form.faq_items.length === 1}
+                    onClick={() => removeFaq(index)}
+                    aria-label={`Remove FAQ ${index + 1}`}
+                  >
+                    <span className="material-symbols-outlined">delete</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="repeat-add" onClick={addFaq}>
+              <span className="material-symbols-outlined">add</span>
+              Add FAQ
+            </button>
+          </fieldset>
+          <fieldset className="admin-repeat-section">
+            <legend>Reviews</legend>
+            <small>Add the traveller name on the left and their review on the right.</small>
+            <div className="admin-faq-review-list">
+              {form.review_items.map((review, index) => (
+                <div className="admin-faq-review-row" key={index}>
+                  <label>
+                    Traveller name
+                    <input
+                      value={review.name}
+                      onChange={(event) => updateReview(index, "name", event.target.value)}
+                      placeholder="Aisha, Mumbai"
+                    />
+                  </label>
+                  <label>
+                    Review
+                    <textarea
+                      rows="3"
+                      value={review.review}
+                      onChange={(event) => updateReview(index, "review", event.target.value)}
+                      placeholder="Share the traveller's experience."
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="repeat-remove"
+                    disabled={form.review_items.length === 1}
+                    onClick={() => removeReview(index)}
+                    aria-label={`Remove review ${index + 1}`}
+                  >
+                    <span className="material-symbols-outlined">delete</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="repeat-add" onClick={addReview}>
+              <span className="material-symbols-outlined">add</span>
+              Add review
+            </button>
+          </fieldset>
           <label>
             Badge <small>(optional)</small>
             <input
@@ -6057,7 +7578,465 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           <button className="primary-button" type="submit" disabled={saving}>
             {saving ? "Saving..." : tour ? "Update tour" : "Save tour"}
           </button>
-          {status && <p>{status}</p>}
+          {status && <p className="admin-status">{status}</p>}
+        </form>
+      </section>
+    </main>
+  );
+}
+
+const multiDayCategoryOptions = [
+  "Food",
+  "Heritage",
+  "Culture",
+  "Adventure",
+  "Community",
+  "Nature",
+  "Wellness",
+  "Wildlife",
+  "Festival",
+  "City",
+];
+const multiDayLanguageOptions = ["English", "Hindi", "French", "German", "Spanish"];
+const multiDayTransportOptions = [
+  "Private vehicle",
+  "Train",
+  "Domestic flight",
+  "Boat",
+  "Walking",
+];
+const multiDayActivityOptions = [
+  "Guided sightseeing",
+  "Food experience",
+  "Cooking class",
+  "Cultural performance",
+  "Community visit",
+  "Nature walk",
+];
+const multiDayDestinationSuggestions = [
+  "Delhi", "Agra", "Jaipur", "Udaipur", "Jodhpur", "Mumbai", "Kochi", "Munnar",
+  "Alleppey", "Goa", "Leh", "Srinagar", "Varanasi", "Kolkata", "Bengaluru",
+];
+const multiDayWizardSteps = [
+  [1, "Overview", "explore"],
+  [2, "Route & itinerary", "map"],
+  [3, "Inclusions", "inventory_2"],
+  [4, "Pricing", "payments"],
+  [5, "Media & publish", "publish"],
+];
+
+const newMultiDayDestination = () => ({ city: "", nights: 1 });
+const newMultiDayItineraryDay = (day) => ({
+  day,
+  title: "",
+  location: "",
+  overnight_location: "",
+  summary: "",
+  transport: [],
+  activities: [],
+  included: "",
+  optional: "",
+});
+const splitTourList = (value) =>
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
+  const [form, setForm] = useState(() => ({
+    title: tour?.title || "",
+    description: tour?.description || "",
+    image_url: tour?.image_url || "",
+    mode: tour?.mode || "Private",
+    category: tour?.category || "Food",
+    categories: tour?.categories?.length ? tour.categories : [tour?.category || "Food"],
+    start_city: tour?.start_city || "",
+    end_city: tour?.end_city || "",
+    duration_days: tour?.duration_days || "",
+    duration_nights: tour?.duration_nights ?? "",
+    physicality: tour?.physicality || "Moderate",
+    languages: tour?.languages?.length ? tour.languages : ["English"],
+    capacity: tour?.capacity || 10,
+    schedule_type: tour?.schedule_type || "Daily",
+    departure_date: tour?.departure_date || "",
+    guide_name: tour?.guide_name || "",
+    highlights: (tour?.highlights || []).join(", "),
+    destinations: tour?.destinations?.length ? tour.destinations : [newMultiDayDestination(), newMultiDayDestination()],
+    itinerary: tour?.itinerary?.length
+      ? tour.itinerary.map((item) => ({
+          ...item,
+          transport: item.transport || [],
+          activities: item.activities || [],
+          included: (item.included || []).join(", "),
+          optional: (item.optional || []).join(", "),
+        }))
+      : [newMultiDayItineraryDay(1)],
+    inclusion_groups: tour?.inclusion_groups?.length
+      ? tour.inclusion_groups.map((group) => ({ ...group, items: (group.items || []).join(", ") }))
+      : [
+          { title: "Meals", items: "" },
+          { title: "Transport", items: "" },
+          { title: "Accommodation", items: "" },
+          { title: "Activities", items: "" },
+        ],
+    exclusions: (tour?.exclusions || []).join(", "),
+    pricing_model: tour?.pricing?.pricing_model || "fixed_per_person",
+    pricing_tiers: tour?.pricing?.tiers?.length
+      ? tour.pricing.tiers
+      : [{ travellers: 2, price_per_person: tour?.price || "" }],
+    price: tour?.price || "",
+    booking_type: tour?.availability?.booking_type || "Private on request",
+    min_travellers: tour?.availability?.min_travellers || 2,
+    max_travellers: tour?.availability?.max_travellers || tour?.capacity || 10,
+    customizable: tour?.availability?.customizable ?? true,
+    gallery_images: (tour?.gallery_images || []).join("\n"),
+    meeting_details: tour?.meeting_details || "",
+    traveller_video_url: tour?.traveller_video_url || "",
+    faq_items: tour?.faq_items?.length ? tour.faq_items : [{ question: "", answer: "" }],
+    tag: tour?.tag || "",
+    featured: tour?.featured || false,
+    dark: tour?.dark || false,
+    published: tour?.published ?? true,
+  }));
+  const [imageFile, setImageFile] = useState(null);
+  const [galleryFiles, setGalleryFiles] = useState([]);
+  const [videoFile, setVideoFile] = useState(null);
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [activeStep, setActiveStep] = useState(1);
+  const update = (field, value) =>
+    setForm((current) => ({ ...current, [field]: value }));
+  const updateListItem = (field, index, key, value) =>
+    setForm((current) => ({
+      ...current,
+      [field]: current[field].map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [key]: value } : item,
+      ),
+    }));
+  const removeListItem = (field, index) =>
+    setForm((current) => ({
+      ...current,
+      [field]: current[field].filter((_, itemIndex) => itemIndex !== index),
+    }));
+  const addListItem = (field, item) =>
+    setForm((current) => ({ ...current, [field]: [...current[field], item] }));
+  const validateStep = (step) => {
+    if (step === 1) {
+      if (!form.title.trim() || !form.description.trim() || !form.start_city.trim() || !form.end_city.trim() || !form.duration_days || !form.duration_nights) {
+        return "Complete the journey title, description, route and duration before continuing.";
+      }
+      if (!tour && !imageFile) return "Add a cover image before continuing.";
+    }
+    if (step === 2) {
+      if (form.destinations.length < 2 || form.destinations.some((item) => !item.city.trim())) {
+        return "Add at least two route stops, with a destination selected for each one.";
+      }
+      if (!form.itinerary.length || form.itinerary.some((item) => !item.title.trim() || !item.location.trim())) {
+        return "Add a title and location for every itinerary day.";
+      }
+    }
+    if (step === 4) {
+      if (!form.price || Number(form.price) <= 0) return "Enter a starting price per traveller.";
+      if (form.pricing_model === "per_person_by_group_size" && form.pricing_tiers.some((tier) => !tier.price_per_person)) {
+        return "Enter a price for every group-size tier, or remove the empty tier.";
+      }
+    }
+    if (step === 3) {
+      if (form.schedule_type === "Specific date" && !form.departure_date) return "Choose the scheduled departure date.";
+      if (Number(form.min_travellers) > Number(form.max_travellers)) return "Maximum travellers must be at least the minimum traveller count.";
+    }
+    return "";
+  };
+  const continueWizard = () => {
+    const validationMessage = validateStep(activeStep);
+    if (validationMessage) {
+      setStatus(validationMessage);
+      return;
+    }
+    setStatus("");
+    setActiveStep((current) => Math.min(current + 1, multiDayWizardSteps.length));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    for (const step of multiDayWizardSteps.map(([number]) => number)) {
+      const validationMessage = validateStep(step);
+      if (validationMessage) {
+        setStatus(validationMessage);
+        setActiveStep(step);
+        return;
+      }
+    }
+    setSaving(true);
+    setStatus("");
+    const categories = [...new Set([form.category, ...form.categories].filter(Boolean))];
+    const payload = {
+      title: form.title.trim(),
+      description: form.description.trim(),
+      image_url: form.image_url,
+      city: `${form.start_city.trim()} to ${form.end_city.trim()}`,
+      mode: form.mode,
+      trip_type: "Multi-day trip",
+      category: form.category,
+      categories,
+      start_city: form.start_city.trim(),
+      end_city: form.end_city.trim(),
+      duration: `${form.duration_days} days / ${form.duration_nights} nights`,
+      duration_days: Number(form.duration_days),
+      duration_nights: Number(form.duration_nights),
+      languages: form.languages,
+      physicality: form.physicality,
+      price: Number(form.price),
+      capacity: Number(form.capacity),
+      schedule_type: form.schedule_type,
+      departure_date:
+        form.schedule_type === "Specific date" ? form.departure_date || null : null,
+      start_time: null,
+      guide_name: form.guide_name.trim() || null,
+      highlights: splitTourList(form.highlights),
+      destinations: form.destinations
+        .filter((item) => item.city.trim())
+        .map((item) => ({ city: item.city.trim(), nights: Number(item.nights) })),
+      itinerary: form.itinerary
+        .filter((item) => item.title.trim() && item.location.trim())
+        .map((item, index) => ({
+          day: index + 1,
+          title: item.title.trim(),
+          location: item.location.trim(),
+          overnight_location: item.overnight_location.trim() || null,
+          summary: item.summary.trim(),
+          transport: item.transport,
+          activities: item.activities,
+          included: splitTourList(item.included),
+          optional: splitTourList(item.optional),
+        })),
+      inclusions: form.inclusion_groups.flatMap((group) => splitTourList(group.items)),
+      inclusion_groups: form.inclusion_groups.map((group) => ({
+        title: group.title,
+        items: splitTourList(group.items),
+      })),
+      exclusions: splitTourList(form.exclusions),
+      pricing: {
+        currency: "INR",
+        pricing_model: form.pricing_model,
+        tiers:
+          form.pricing_model === "per_person_by_group_size"
+            ? form.pricing_tiers
+                .filter((tier) => tier.price_per_person)
+                .map((tier) => ({
+                  travellers: Number(tier.travellers),
+                  price_per_person: Number(tier.price_per_person),
+                }))
+            : [],
+      },
+      availability: {
+        booking_type: form.booking_type,
+        min_travellers: Number(form.min_travellers),
+        max_travellers: Number(form.max_travellers),
+        customizable: form.customizable,
+      },
+      gallery_images: form.gallery_images
+        .split("\n")
+        .map((image) => image.trim())
+        .filter(Boolean),
+      meeting_details: form.meeting_details.trim(),
+      traveller_video_url: form.traveller_video_url.trim() || null,
+      private_price: form.mode === "Private" ? Number(form.price) : null,
+      faq_items: form.faq_items
+        .filter((item) => item.question.trim() && item.answer.trim())
+        .map((item) => ({ question: item.question.trim(), answer: item.answer.trim() })),
+      review_items: tour?.review_items || [],
+      tag: form.tag.trim() || null,
+      featured: form.featured,
+      dark: form.dark,
+      published: form.published,
+    };
+    try {
+      if (imageFile) {
+        const uploadData = new FormData();
+        uploadData.append("image", imageFile);
+        const uploadResponse = await fetch(`${apiBaseUrl}/api/admin/tour-images`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.token}` },
+          body: uploadData,
+        });
+        const uploadBody = await uploadResponse.json();
+        if (!uploadResponse.ok)
+          throw new Error(
+            formatApiError(uploadBody.detail, "Unable to upload the tour image."),
+          );
+        payload.image_url = uploadBody.image_url;
+      } else if (!tour) {
+        throw new Error("Please choose a cover image for this multi-day tour.");
+      }
+      if (galleryFiles.length) {
+        const uploadedImages = await Promise.all(
+          galleryFiles.map(async (file) => {
+            const uploadData = new FormData();
+            uploadData.append("image", file);
+            const response = await fetch(`${apiBaseUrl}/api/admin/tour-images`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${session.token}` },
+              body: uploadData,
+            });
+            const body = await response.json();
+            if (!response.ok)
+              throw new Error(
+                formatApiError(body.detail, "Unable to upload a gallery image."),
+              );
+            return body.image_url;
+          }),
+        );
+        payload.gallery_images = uploadedImages;
+      }
+      if (videoFile) {
+        const uploadData = new FormData();
+        uploadData.append("video", videoFile);
+        const response = await fetch(`${apiBaseUrl}/api/admin/tour-videos`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.token}` },
+          body: uploadData,
+        });
+        const body = await response.json();
+        if (!response.ok)
+          throw new Error(
+            formatApiError(body.detail, "Unable to upload the traveller video."),
+          );
+        payload.traveller_video_url = body.video_url;
+      }
+      const response = await fetch(`${apiBaseUrl}/api/admin/tours${tour ? `/${tour.id}` : ""}`, {
+        method: tour ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(
+          formatApiError(body.detail, "Unable to save the multi-day tour."),
+        );
+      onSaved(body);
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <main className="top-space">
+      <section className="section admin-editor multi-day-editor">
+        <div className="admin-heading">
+          <div>
+            <Eyebrow>Multi-day journey builder</Eyebrow>
+            <h1>{tour ? "Edit multi-day tour" : "Add multi-day tour"}</h1>
+            <p className="lead">Build the route, itinerary, inclusions, availability and pricing travellers need before they enquire.</p>
+          </div>
+          <button className="text-button" onClick={onCancel}>Back to dashboard</button>
+        </div>
+        <form className="contact-form multi-day-form" onSubmit={submit} noValidate>
+          <nav className="multi-day-wizard-progress" aria-label="Multi-day tour form steps">
+            {multiDayWizardSteps.map(([number, label, icon]) => (
+              <button
+                key={number}
+                type="button"
+                className={number === activeStep ? "active" : number < activeStep ? "complete" : ""}
+                onClick={() => {
+                  if (number <= activeStep) {
+                    setStatus("");
+                    setActiveStep(number);
+                  }
+                }}
+                disabled={number > activeStep}
+                aria-current={number === activeStep ? "step" : undefined}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
+                <span><b>{number}</b>{label}</span>
+              </button>
+            ))}
+          </nav>
+          <section className={`multi-day-form-section ${activeStep === 1 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading">
+              <span className="material-symbols-outlined">explore</span>
+              <div><h2>Journey essentials</h2><p>Give the tour a clear route and identity.</p></div>
+            </div>
+            <div className="multi-day-form-grid">
+              <label>Tour title<input required value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="e.g. India Culinary & Culture Journey" /></label>
+              <label>Tour style<select value={form.mode} onChange={(event) => update("mode", event.target.value)}><option>Private</option><option>Shared</option></select></label>
+              <label>Primary category<select value={form.category} onChange={(event) => update("category", event.target.value)}>{multiDayCategoryOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label>All categories <small>Choose every relevant category</small><select multiple value={form.categories} onChange={(event) => update("categories", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayCategoryOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label>Starting city<input required list="multi-day-cities" value={form.start_city} onChange={(event) => update("start_city", event.target.value)} placeholder="Delhi" /></label>
+              <label>Ending city<input required list="multi-day-cities" value={form.end_city} onChange={(event) => update("end_city", event.target.value)} placeholder="Goa" /></label>
+              <label>Duration in days<input required type="number" min="2" max="365" value={form.duration_days} onChange={(event) => update("duration_days", event.target.value)} /></label>
+              <label>Duration in nights<input required type="number" min="1" max="364" value={form.duration_nights} onChange={(event) => update("duration_nights", event.target.value)} /></label>
+              <label>Physicality<select value={form.physicality} onChange={(event) => update("physicality", event.target.value)}><option>Low</option><option>Moderate</option><option>High</option></select></label>
+              <label>Tour languages <small>Choose all that apply</small><select multiple value={form.languages} onChange={(event) => update("languages", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayLanguageOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            </div>
+            <label className="multi-day-wide-field">Short description<textarea required rows="4" value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Describe the journey, its pace and what makes it special." /></label>
+            <label className="multi-day-wide-field">Journey highlights <small>Separate with commas</small><input value={form.highlights} onChange={(event) => update("highlights", event.target.value)} placeholder="Regional food experiences, heritage landmarks, community visits" /></label>
+            <label className="multi-day-wide-field">Cover image<input required={!tour} type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setImageFile(event.target.files?.[0] || null)} /><small>{imageFile ? imageFile.name : tour ? "Leave empty to keep the current cover image." : "JPEG, PNG, or WebP, up to 5 MB."}</small></label>
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 2 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">map</span><div><h2>Route stops</h2><p>Add each overnight destination in travel order.</p></div></div>
+            <div className="multi-day-repeat-list">
+              {form.destinations.map((destination, index) => <div className="multi-day-repeat-row route-stop" key={`${index}-${destination.city}`}><b>{index + 1}</b><label>Destination<input required list="multi-day-cities" value={destination.city} onChange={(event) => updateListItem("destinations", index, "city", event.target.value)} placeholder="Jaipur" /></label><label>Nights<select value={destination.nights} onChange={(event) => updateListItem("destinations", index, "nights", event.target.value)}>{Array.from({ length: 31 }, (_, night) => <option key={night} value={night}>{night}</option>)}</select></label><button type="button" className="repeat-remove" disabled={form.destinations.length <= 2} onClick={() => removeListItem("destinations", index)} aria-label="Remove route stop"><span className="material-symbols-outlined">delete</span></button></div>)}
+            </div>
+            <button type="button" className="repeat-add" onClick={() => addListItem("destinations", newMultiDayDestination())}><span className="material-symbols-outlined">add</span>Add destination</button>
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 2 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">calendar_month</span><div><h2>Day-by-day itinerary</h2><p>Each entry appears in the traveller itinerary.</p></div></div>
+            <div className="multi-day-itinerary-list">
+              {form.itinerary.map((item, index) => <article className="multi-day-itinerary-editor" key={`${index}-${item.day}`}><div className="itinerary-editor-head"><b>Day {index + 1}</b><button type="button" className="repeat-remove" disabled={form.itinerary.length === 1} onClick={() => removeListItem("itinerary", index)}><span className="material-symbols-outlined">delete</span>Remove</button></div><div className="multi-day-form-grid"><label>Day title<input required value={item.title} onChange={(event) => updateListItem("itinerary", index, "title", event.target.value)} placeholder="Arrival in Delhi" /></label><label>Location<input required list="multi-day-cities" value={item.location} onChange={(event) => updateListItem("itinerary", index, "location", event.target.value)} placeholder="Delhi" /></label><label>Overnight location<input list="multi-day-cities" value={item.overnight_location} onChange={(event) => updateListItem("itinerary", index, "overnight_location", event.target.value)} placeholder="Delhi" /></label><label>Transport <small>Choose all that apply</small><select multiple value={item.transport} onChange={(event) => updateListItem("itinerary", index, "transport", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayTransportOptions.map((option) => <option key={option}>{option}</option>)}</select></label><label>Activities <small>Choose all that apply</small><select multiple value={item.activities} onChange={(event) => updateListItem("itinerary", index, "activities", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayActivityOptions.map((option) => <option key={option}>{option}</option>)}</select></label><label>Included on this day <small>Separate with commas</small><input value={item.included} onChange={(event) => updateListItem("itinerary", index, "included", event.target.value)} placeholder="Hotel, breakfast, guide" /></label></div><label className="multi-day-wide-field">Day summary<textarea rows="3" value={item.summary} onChange={(event) => updateListItem("itinerary", index, "summary", event.target.value)} placeholder="Describe the day’s pace, experiences and important moments." /></label><label className="multi-day-wide-field">Optional experiences <small>Separate with commas</small><input value={item.optional} onChange={(event) => updateListItem("itinerary", index, "optional", event.target.value)} placeholder="Boat ride, spa treatment" /></label></article>)}
+            </div>
+            <button type="button" className="repeat-add" onClick={() => addListItem("itinerary", newMultiDayItineraryDay(form.itinerary.length + 1))}><span className="material-symbols-outlined">add</span>Add itinerary day</button>
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 3 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">inventory_2</span><div><h2>Inclusions and availability</h2><p>Set clear expectations before guests enquire.</p></div></div>
+            <div className="multi-day-inclusion-grid">{form.inclusion_groups.map((group, index) => <label key={group.title}>{group.title}<textarea rows="3" value={group.items} onChange={(event) => updateListItem("inclusion_groups", index, "items", event.target.value)} placeholder="Separate included items with commas" /></label>)}</div>
+            <label className="multi-day-wide-field">Not included <small>Separate with commas</small><input value={form.exclusions} onChange={(event) => update("exclusions", event.target.value)} placeholder="International flights, optional activities, personal expenses" /></label>
+            <div className="multi-day-form-grid"><label>Availability<select value={form.booking_type} onChange={(event) => update("booking_type", event.target.value)}><option>Scheduled</option><option>On request</option><option>Private on request</option></select></label><label>Departure schedule<select value={form.schedule_type} onChange={(event) => update("schedule_type", event.target.value)}><option>Daily</option><option>Specific date</option></select></label>{form.schedule_type === "Specific date" && <label>Departure date<input required type="date" value={form.departure_date} onChange={(event) => update("departure_date", event.target.value)} /></label>}<label>Minimum travellers<input required type="number" min="1" max="500" value={form.min_travellers} onChange={(event) => update("min_travellers", event.target.value)} /></label><label>Maximum travellers<input required type="number" min="1" max="500" value={form.max_travellers} onChange={(event) => update("max_travellers", event.target.value)} /></label><label>Lead guide <small>Optional</small><input value={form.guide_name} onChange={(event) => update("guide_name", event.target.value)} placeholder="Aarav Mehta" /></label></div>
+            <label className="checkbox-field"><input type="checkbox" checked={form.customizable} onChange={(event) => update("customizable", event.target.checked)} /> This route can be customised for private bookings</label>
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 4 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">payments</span><div><h2>Pricing</h2><p>Show a base price or define group-size price tiers.</p></div></div>
+            <div className="multi-day-form-grid"><label>Pricing type<select value={form.pricing_model} onChange={(event) => update("pricing_model", event.target.value)}><option value="fixed_per_person">Fixed price per person</option><option value="per_person_by_group_size">Price by group size</option><option value="on_request">On request</option></select></label><label>Starting price per person (INR)<input required type="number" min="1" step="1" value={form.price} onChange={(event) => update("price", event.target.value)} /></label></div>
+            {form.pricing_model === "per_person_by_group_size" && <><div className="multi-day-price-tiers">{form.pricing_tiers.map((tier, index) => <div className="multi-day-repeat-row" key={index}><label>Travellers<select value={tier.travellers} onChange={(event) => updateListItem("pricing_tiers", index, "travellers", event.target.value)}>{Array.from({ length: 20 }, (_, count) => <option key={count + 1} value={count + 1}>{count + 1}</option>)}</select></label><label>Price per person (INR)<input required type="number" min="1" step="1" value={tier.price_per_person} onChange={(event) => updateListItem("pricing_tiers", index, "price_per_person", event.target.value)} /></label><button type="button" className="repeat-remove" disabled={form.pricing_tiers.length === 1} onClick={() => removeListItem("pricing_tiers", index)}><span className="material-symbols-outlined">delete</span></button></div>)}</div><button type="button" className="repeat-add" onClick={() => addListItem("pricing_tiers", { travellers: form.pricing_tiers.length + 2, price_per_person: "" })}><span className="material-symbols-outlined">add</span>Add price tier</button></>}
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 5 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">photo_library</span><div><h2>Media and traveller details</h2><p>Add optional media and practical information.</p></div></div>
+            <label className="multi-day-wide-field">Gallery image URLs <small>One URL per line, up to 10</small><textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." /></label>
+            <label className="multi-day-wide-field">Or upload gallery images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} /><small>{galleryFiles.length ? `${galleryFiles.length} image(s) ready to upload.` : "JPEG, PNG, or WebP; up to 10 images."}</small></label>
+            <label className="multi-day-wide-field">Traveller experience video <small>Optional URL or upload</small><input type="url" value={form.traveller_video_url} onChange={(event) => update("traveller_video_url", event.target.value)} placeholder="https://www.youtube.com/embed/..." /><input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} /></label>
+            <label className="multi-day-wide-field">Meeting and joining details<textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Arrival airport, meeting time, joining instructions and end point." /></label>
+          </section>
+
+          <section className={`multi-day-form-section ${activeStep === 5 ? "is-active" : ""}`}>
+            <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">help</span><div><h2>FAQs and publishing</h2><p>Answer common questions before publishing.</p></div></div>
+            {form.faq_items.map((faq, index) => <div className="multi-day-faq-row" key={index}><label>Question<input value={faq.question} onChange={(event) => updateListItem("faq_items", index, "question", event.target.value)} placeholder="Can this tour be customised?" /></label><label>Answer<textarea rows="2" value={faq.answer} onChange={(event) => updateListItem("faq_items", index, "answer", event.target.value)} placeholder="Explain the available options." /></label><button type="button" className="repeat-remove" disabled={form.faq_items.length === 1} onClick={() => removeListItem("faq_items", index)}><span className="material-symbols-outlined">delete</span></button></div>)}
+            <button type="button" className="repeat-add" onClick={() => addListItem("faq_items", { question: "", answer: "" })}><span className="material-symbols-outlined">add</span>Add FAQ</button>
+            <div className="multi-day-form-grid"><label>Badge <small>Optional</small><input value={form.tag} onChange={(event) => update("tag", event.target.value)} placeholder="Signature journey" /></label></div>
+            <div className="multi-day-checkboxes"><label><input type="checkbox" checked={form.featured} onChange={(event) => update("featured", event.target.checked)} /> Feature this tour</label><label><input type="checkbox" checked={form.dark} onChange={(event) => update("dark", event.target.checked)} /> Use dark booking button</label><label><input type="checkbox" checked={form.published} onChange={(event) => update("published", event.target.checked)} /> Publish immediately</label></div>
+          </section>
+          <datalist id="multi-day-cities">{multiDayDestinationSuggestions.map((city) => <option key={city} value={city} />)}</datalist>
+          <div className="multi-day-wizard-actions">
+            <button className="text-button" type="button" onClick={onCancel}>Cancel</button>
+            <div>
+              {activeStep > 1 && <button className="outline-button" type="button" onClick={() => { setStatus(""); setActiveStep((current) => current - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Back</button>}
+              {activeStep < multiDayWizardSteps.length ? (
+                <button className="primary-button" type="button" onClick={continueWizard}>Continue</button>
+              ) : (
+                <button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving multi-day tour..." : tour ? "Update multi-day tour" : "Save multi-day tour"}</button>
+              )}
+            </div>
+          </div>
+          {status && <p className="admin-status">{status}</p>}
         </form>
       </section>
     </main>
@@ -6092,8 +8071,10 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
       );
       if (responses.some((response) => !response.ok))
         throw new Error(
-          bodies.find((body) => body.detail)?.detail ||
+          formatApiError(
+            bodies.find((body) => body.detail)?.detail,
             "Unable to load the dashboard.",
+          ),
         );
       setTours(bodies[0]);
       setEnquiries(bodies[1]);
@@ -6370,7 +8351,9 @@ function AdminRequestList({ type, items, headers, onChanged }) {
     );
     const body = await response.json();
     if (!response.ok)
-      throw new Error(body.detail || "Unable to update request.");
+      throw new Error(
+        formatApiError(body.detail, "Unable to update request."),
+      );
     onChanged((current) =>
       current.map((entry) => (entry.id === item.id ? body : entry)),
     );
@@ -6522,12 +8505,8 @@ function Footer({ go }) {
   return (
     <footer className="site-footer reference-footer">
       <div className="footer-skyline" aria-hidden="true"><img src={footerCitySkyline} alt="" /></div>
-      <div className="footer-brand-row"><button className="brand" onClick={() => go("/")}>Nomad Wanderers</button></div>
       <div className="footer-reference-grid">
       <div>
-        <button className="brand" onClick={() => go("/")}>
-          Nomad Wanderers
-        </button>
         <p>
           Experience Mumbai's soul through expert eyes. Ethical, professional,
           and authentic tours since 2012.
@@ -6543,18 +8522,18 @@ function Footer({ go }) {
         <b>Top destinations</b>
         <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
-        <button onClick={() => go("/tours?city=Mumbai&category=Community")}>Dharavi</button>
+        <button onClick={() => go("/tours?city=Mumbai&category=Cultural")}>Dharavi</button>
         <button onClick={() => go("/tours/unique")}>Unique experiences</button>
       </div>
       <div className="footer-contact">
         <b>Contact & updates</b>
         <a href="mailto:hello@nomadwanderers.in">hello@nomadwanderers.in</a>
-        <a href="tel:+919876543210">+91 98765 43210</a>
+        <a href="tel:+919619952139">+91 96199 52139</a>
         <span>Colaba Causeway, Mumbai</span>
         <div className="footer-socials">
           <a
             className="facebook"
-            href="https://www.facebook.com/mudavath.ramesh.841066/"
+            href="https://www.facebook.com/share/1ELaeB21ZH/?mibextid=wwXIfr"
             target="_blank"
             rel="noreferrer"
             aria-label="Follow Nomad Wanderers on Facebook"
@@ -6565,7 +8544,7 @@ function Footer({ go }) {
           </a>
           <a
             className="instagram"
-            href="https://www.instagram.com/"
+            href="https://www.instagram.com/nomadwanderers.co?igsi=MWI5ZDlqNm5uZWpkbg=="
             target="_blank"
             rel="noreferrer"
             aria-label="Follow Nomad Wanderers on Instagram"
@@ -6576,7 +8555,7 @@ function Footer({ go }) {
           </a>
           <a
             className="youtube"
-            href="https://www.youtube.com/"
+            href="https://youtube.com/@nomadwanderersco?si=4RqnyLG1Cuk0x-tP"
             target="_blank"
             rel="noreferrer"
             aria-label="Follow Nomad Wanderers on YouTube"

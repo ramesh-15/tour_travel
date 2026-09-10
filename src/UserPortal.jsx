@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatApiError } from "./apiError";
 
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` });
 const formatDate = (value) =>
@@ -8,9 +9,9 @@ const formatDate = (value) =>
     year: "numeric",
   });
 const formatInr = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
-const defaultUpiId = "919876543210@upi";
-const defaultUpiNumber = "+91 98765 43210";
-const whatsAppNumber = "919876543210";
+const defaultUpiId = "919619952139@upi";
+const defaultUpiNumber = "+91 96199 52139";
+const whatsAppNumber = "919619952139";
 
 export default function UserPortal({
   apiBaseUrl,
@@ -49,9 +50,10 @@ export default function UserPortal({
       ]);
       if (!accountResponse.ok || !bookingResponse.ok) {
         throw new Error(
-          accountBody.detail ||
-            bookingBody.detail ||
+          formatApiError(
+            accountBody.detail || bookingBody.detail,
             "Unable to load your journeys.",
+          ),
         );
       }
       setAccount(accountBody);
@@ -99,7 +101,9 @@ export default function UserPortal({
       });
       const body = await response.json();
       if (!response.ok)
-        throw new Error(body.detail || "Unable to update profile.");
+        throw new Error(
+          formatApiError(body.detail, "Unable to update profile."),
+        );
       setAccount(body);
       setProfile({
         name: body.name,
@@ -122,7 +126,9 @@ export default function UserPortal({
       );
       if (!response.ok) {
         const body = await response.json();
-        throw new Error(body.detail || "Unable to download confirmation.");
+        throw new Error(
+          formatApiError(body.detail, "Unable to download confirmation."),
+        );
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -437,6 +443,7 @@ function PaymentDetailsModal({ booking, siteSettings, onClose }) {
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(
     qrData,
   )}`;
+  const paymentScannerUrl = siteSettings?.upi_qr_image_url || qrCodeUrl;
   const whatsAppMessage = encodeURIComponent(
     `Hi Nomad Wanderers, I have completed payment for ${booking.tour_title} booking #${booking.id}. I am sharing the payment screenshot for verification.`,
   );
@@ -481,13 +488,13 @@ function PaymentDetailsModal({ booking, siteSettings, onClose }) {
           <b>Scan to pay with any UPI app</b>
           <span>UPI ID: {upiId}</span>
           <span>UPI number: {upiNumber}</span>
-          <img src={qrCodeUrl} alt="UPI payment QR code" />
+          <img src={paymentScannerUrl} alt="UPI payment QR code" />
         </div>
         <div className="traveller-payment-note">
           <span className="material-symbols-outlined">info</span>
           <p>
             After payment, share your payment screenshot with our team on
-            WhatsApp at <b>+91 98765 43210</b>. This screenshot is required
+            WhatsApp at <b>+91 96199 52139</b>. This screenshot is required
             before your booking can be confirmed.
           </p>
         </div>
