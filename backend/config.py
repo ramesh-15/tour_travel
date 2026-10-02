@@ -45,6 +45,22 @@ META_WHATSAPP_PHONE_NUMBER_ID = os.getenv("META_WHATSAPP_PHONE_NUMBER_ID")
 META_WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("META_WHATSAPP_BUSINESS_ACCOUNT_ID")
 META_WHATSAPP_VERIFY_TOKEN = os.getenv("META_WHATSAPP_VERIFY_TOKEN")
 META_WHATSAPP_APP_SECRET = os.getenv("META_WHATSAPP_APP_SECRET")
+META_WHATSAPP_API_VERSION = os.getenv("META_WHATSAPP_API_VERSION", "v24.0")
+META_WHATSAPP_TEMPLATE_NAME = os.getenv("META_WHATSAPP_TEMPLATE_NAME", "").strip()
+META_WHATSAPP_TEMPLATE_LANGUAGE = os.getenv("META_WHATSAPP_TEMPLATE_LANGUAGE", "en_US").strip()
+META_WHATSAPP_TEMPLATE_PARAMETER_KEYS = tuple(
+    key.strip()
+    for key in os.getenv(
+        "META_WHATSAPP_TEMPLATE_PARAMETER_KEYS",
+        "first_name,booking_reference,tour_title,travel_date,traveller_count",
+    ).split(",")
+    if key.strip()
+)
+META_WHATSAPP_ADMIN_RECIPIENTS = tuple(
+    number.strip()
+    for number in os.getenv("META_WHATSAPP_ADMIN_RECIPIENTS", "").split(",")
+    if number.strip()
+)
 
 
 def provider_readiness() -> dict[str, bool]:
@@ -53,5 +69,13 @@ def provider_readiness() -> dict[str, bool]:
         "razorpay": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET),
         "paypal": bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET and PAYPAL_WEBHOOK_ID),
         "aws_ses": bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_REGION and AWS_SES_FROM_EMAIL),
-        "meta_whatsapp": bool(META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID and META_WHATSAPP_VERIFY_TOKEN and META_WHATSAPP_APP_SECRET),
+        # Sending through the Cloud API only requires the access token, sender
+        # phone-number ID, and an approved message template. The verify token
+        # and app secret are only needed when webhook verification is enabled.
+        "meta_whatsapp": bool(
+            META_WHATSAPP_ACCESS_TOKEN
+            and META_WHATSAPP_PHONE_NUMBER_ID
+            and META_WHATSAPP_TEMPLATE_NAME
+            and META_WHATSAPP_TEMPLATE_LANGUAGE
+        ),
     }

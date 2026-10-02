@@ -100,7 +100,7 @@ export default function UnifiedLogin({ apiBaseUrl, onAuthenticated }) {
     ? "Enter the email address on your account and choose a new password."
     : isRegister
       ? "Create an account to book, pay for, and manage your tours."
-      : "Sign in with your username and password.";
+      : "Sign in with your username and password. Your role determines the workspace you can access.";
 
   return (
     <main className="auth-page">
@@ -118,11 +118,11 @@ export default function UnifiedLogin({ apiBaseUrl, onAuthenticated }) {
             </span>
             <span className="auth-mobile-title">Welcome back</span>
           </h1>
-          <p>Sign in to manage your journeys, bookings and travel details.</p>
+          <p>One secure sign-in for travellers, staff and administrators. Your role determines the workspace you can access.</p>
           <div className="auth-role-list">
-            <span><i className="material-symbols-outlined">person</i>Traveller bookings</span>
-            <span><i className="material-symbols-outlined">calendar_month</i>Upcoming journeys</span>
-            <span><i className="material-symbols-outlined">verified_user</i>Secure account access</span>
+            <span><i className="material-symbols-outlined">person</i>Traveller accounts</span>
+            <span><i className="material-symbols-outlined">groups</i>Team workspaces</span>
+            <span><i className="material-symbols-outlined">verified_user</i>Role-based access</span>
           </div>
         </div>
       </section>

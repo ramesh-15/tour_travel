@@ -22,11 +22,6 @@ TOUR_COLUMNS = (
     "categories", "start_city", "end_city", "destinations", "duration_days", "duration_nights",
     "languages", "physicality", "itinerary", "inclusion_groups", "exclusions", "pricing", "availability",
 )
-DEFAULT_SITE_SETTINGS = {
-    "upi_id": "919619952139@upi",
-    "upi_number": "+91 96199 52139",
-    "upi_qr_image_url": "",
-}
 CAROUSEL_SETTING_KEY = "home_carousel_tour_ids"
 
 
@@ -199,6 +194,28 @@ def initialize_database() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS reviews (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            tour_id BIGINT NOT NULL,
+            name VARCHAR(120) NOT NULL,
+            rating TINYINT NOT NULL DEFAULT 5 CHECK (rating >= 1 AND rating <= 5),
+            review_heading VARCHAR(180) NOT NULL DEFAULT '',
+            review_point TEXT NOT NULL,
+            guide_rating TINYINT NOT NULL DEFAULT 5 CHECK (guide_rating >= 1 AND guide_rating <= 5),
+            meeting_or_pickup_rating TINYINT NOT NULL DEFAULT 5 CHECK (meeting_or_pickup_rating >= 1 AND meeting_or_pickup_rating <= 5),
+            value_for_money_rating TINYINT NOT NULL DEFAULT 5 CHECK (value_for_money_rating >= 1 AND value_for_money_rating <= 5),
+            review_date VARCHAR(40) NULL,
+            source VARCHAR(100) NOT NULL DEFAULT '',
+            link VARCHAR(2048) NULL,
+            show_on_home BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL,
+            CONSTRAINT reviews_tour_fk FOREIGN KEY (tour_id) REFERENCES tours(id) ON DELETE CASCADE,
+            INDEX reviews_tour_id_idx (tour_id),
+            INDEX reviews_home_idx (show_on_home, review_date)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS revoked_tokens (
             token_hash CHAR(64) NOT NULL PRIMARY KEY,
             expires_at BIGINT NOT NULL,
@@ -246,21 +263,6 @@ def initialize_database() -> None:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS demo_payments (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            booking_id BIGINT NULL,
-            name VARCHAR(120) NOT NULL,
-            email VARCHAR(254) NOT NULL,
-            phone VARCHAR(40) NOT NULL,
-            tour_title VARCHAR(180) NOT NULL,
-            amount DECIMAL(12, 2) NOT NULL,
-            payment_method VARCHAR(20) NOT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'paid',
-            transaction_reference VARCHAR(48) NOT NULL UNIQUE,
-            created_at DATETIME(6) NOT NULL
-        )
-        """,
-        """
         CREATE TABLE IF NOT EXISTS users (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
@@ -281,6 +283,7 @@ def initialize_database() -> None:
             tour_id BIGINT NOT NULL,
             travel_date DATE NOT NULL,
             travellers SMALLINT NOT NULL CHECK (travellers >= 1),
+            contact_phone VARCHAR(40) NOT NULL DEFAULT '',
             special_requests TEXT NOT NULL,
             booking_status VARCHAR(20) NOT NULL DEFAULT 'pending',
             payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
@@ -288,6 +291,25 @@ def initialize_database() -> None:
             updated_at DATETIME(6) NOT NULL,
             CONSTRAINT bookings_user_fk FOREIGN KEY (user_id) REFERENCES users(id),
             CONSTRAINT bookings_tour_fk FOREIGN KEY (tour_id) REFERENCES tours(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS razorpay_orders (
+            razorpay_order_id VARCHAR(64) NOT NULL PRIMARY KEY,
+            booking_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            amount BIGINT UNSIGNED NOT NULL,
+            currency CHAR(3) NOT NULL,
+            receipt VARCHAR(40) NOT NULL,
+            terms_version VARCHAR(32) NOT NULL,
+            terms_accepted_at DATETIME(6) NOT NULL,
+            razorpay_payment_id VARCHAR(64) NULL UNIQUE,
+            razorpay_signature CHAR(64) NULL,
+            payment_status VARCHAR(20) NOT NULL DEFAULT 'created',
+            created_at DATETIME(6) NOT NULL,
+            verified_at DATETIME(6) NULL,
+            CONSTRAINT razorpay_orders_booking_fk FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+            CONSTRAINT razorpay_orders_user_fk FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """,
         """
@@ -353,9 +375,15 @@ def initialize_database() -> None:
             ("tours", "availability", "JSON NULL"),
             ("users", "username", "VARCHAR(80) NULL"),
             ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
+            ("bookings", "contact_phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
             ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'customer'"),
             ("users", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
-            ("demo_payments", "booking_id", "BIGINT NULL"),
+            ("razorpay_orders", "terms_version", "VARCHAR(32) NOT NULL DEFAULT 'legacy'"),
+            ("razorpay_orders", "terms_accepted_at", "DATETIME(6) NULL"),
+            ("reviews", "review_heading", "VARCHAR(180) NOT NULL DEFAULT ''"),
+            ("reviews", "guide_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (guide_rating >= 1 AND guide_rating <= 5)"),
+            ("reviews", "meeting_or_pickup_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (meeting_or_pickup_rating >= 1 AND meeting_or_pickup_rating <= 5)"),
+            ("reviews", "value_for_money_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (value_for_money_rating >= 1 AND value_for_money_rating <= 5)"),
         ):
             _ensure_column(connection, table, column, definition)
         _execute(connection, "UPDATE users SET username = CONCAT('user', id) WHERE username IS NULL OR username = ''")
@@ -363,28 +391,67 @@ def initialize_database() -> None:
         _ensure_index(connection, "users", "users_username_unique", "username", unique=True)
         _ensure_index(connection, "contact_enquiries", "contact_enquiries_created_at_idx", "created_at")
         _ensure_index(connection, "custom_journeys", "custom_journeys_created_at_idx", "created_at")
-        _ensure_index(connection, "demo_payments", "demo_payments_booking_idx", "booking_id")
-        _ensure_index(connection, "demo_payments", "demo_payments_created_at_idx", "created_at")
         _ensure_index(connection, "users", "users_email_idx", "email")
         _ensure_index(connection, "bookings", "bookings_user_created_idx", "user_id, created_at")
+        _ensure_index(connection, "razorpay_orders", "razorpay_orders_booking_idx", "booking_id, created_at")
         _ensure_index(connection, "notification_logs", "notification_logs_booking_created_idx", "booking_id, created_at")
-        # A saved payment scanner can be a full public asset URL, which is
-        # longer than the original short UPI settings values.
-        _execute(connection, "ALTER TABLE site_settings MODIFY COLUMN setting_value VARCHAR(2048) NOT NULL")
-        # Replace the retired public contact/payment number in installations
-        # that still hold the original defaults, without changing any other
-        # administrator-configured setting.
-        for key, legacy_value in (
-            ("upi_id", "919876543210@upi"),
-            ("upi_number", "+91 98765 43210"),
-        ):
+        _migrate_legacy_tour_reviews(connection)
+
+
+def _migrate_legacy_tour_reviews(connection: MySQLConnection) -> None:
+    """Move reviews from the old tours JSON column into the related table once."""
+    rows = _fetch_all(connection, "SELECT id, review_items FROM tours")
+    now = _utc_now()
+    for row in rows:
+        raw_reviews = row.get("review_items")
+        if isinstance(raw_reviews, str):
+            try:
+                raw_reviews = json.loads(raw_reviews)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_reviews = []
+        if not isinstance(raw_reviews, list) or not raw_reviews:
+            continue
+        for item in raw_reviews:
+            if isinstance(item, (list, tuple)):
+                item = {"name": item[0] if item else "", "review": item[1] if len(item) > 1 else ""}
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("author") or "").strip()[:120]
+            review_point = str(item.get("review_point") or item.get("review") or item.get("text") or "").strip()
+            if not name or not review_point:
+                continue
+            raw_date = item.get("date")
+            review_date = (str(raw_date).strip()[:40] or None) if raw_date else None
+            rating = item.get("rating", 5)
+            try:
+                rating = min(5, max(1, int(rating)))
+            except (TypeError, ValueError):
+                rating = 5
+            raw_link = str(item.get("link") or "").strip()[:2048]
+            review_link = raw_link if raw_link.lower().startswith(("http://", "https://")) else None
+            component_ratings = []
+            for field in ("guide_rating", "meeting_or_pickup_rating", "value_for_money_rating"):
+                try:
+                    component_ratings.append(min(5, max(1, int(item.get(field, 5)))))
+                except (TypeError, ValueError):
+                    component_ratings.append(5)
             _execute(
                 connection,
-                "UPDATE site_settings SET setting_value = %s, updated_at = %s WHERE setting_key = %s AND setting_value = %s",
-                (DEFAULT_SITE_SETTINGS[key], _utc_now(), key, legacy_value),
+                """INSERT INTO reviews
+                (tour_id, name, rating, review_heading, review_point, guide_rating,
+                meeting_or_pickup_rating, value_for_money_rating, review_date, source, link,
+                show_on_home, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)""",
+                (
+                    int(row["id"]), name, rating,
+                    str(item.get("review_heading") or "").strip()[:180],
+                    review_point, *component_ratings, review_date,
+                    str(item.get("source") or "").strip()[:100],
+                    review_link,
+                    now, now,
+                ),
             )
-
-
+        _execute(connection, "UPDATE tours SET review_items = JSON_ARRAY() WHERE id = %s", (row["id"],))
 def health() -> str:
     try:
         with database() as connection:
@@ -392,39 +459,6 @@ def health() -> str:
         return "ok"
     except Exception:
         return "unavailable"
-
-
-def get_site_settings() -> dict[str, str]:
-    """Return public site settings, filling missing values with safe defaults."""
-    settings = dict(DEFAULT_SITE_SETTINGS)
-    placeholders = ", ".join("%s" for _ in settings)
-    with database() as connection:
-        rows = _fetch_all(
-            connection,
-            f"SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ({placeholders})",
-            tuple(DEFAULT_SITE_SETTINGS),
-        )
-    for row in rows:
-        key = str(row.get("setting_key") or "")
-        value = str(row.get("setting_value") or "").strip()
-        if key in settings and value:
-            settings[key] = value
-    return settings
-
-
-def save_site_settings(values: dict[str, str]) -> dict[str, str]:
-    """Persist editable site settings and return the complete current values."""
-    now = _utc_now()
-    with database() as connection:
-        for key in DEFAULT_SITE_SETTINGS:
-            value = str(values.get(key) or DEFAULT_SITE_SETTINGS[key]).strip()
-            _execute(
-                connection,
-                "INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s) "
-                "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)",
-                (key, value, now),
-            )
-    return get_site_settings()
 
 
 def get_carousel_tour_ids() -> list[int]:
@@ -468,7 +502,8 @@ def list_carousel_tours() -> list[dict[str, Any]]:
             f"SELECT * FROM tours WHERE published = TRUE AND id IN ({placeholders})",
             tuple(tour_ids),
         )
-    by_id = {int(row["id"]): row_to_dict(row) for row in rows}
+        normalized_rows = _attach_tour_reviews(connection, rows)
+    by_id = {int(tour["id"]): tour for tour in normalized_rows}
     return [by_id[tour_id] for tour_id in tour_ids if tour_id in by_id]
 
 
@@ -504,6 +539,44 @@ def _complete_idempotency(connection: MySQLConnection, user_id: int, operation: 
         _execute(connection, "UPDATE idempotency_keys SET resource_id = %s WHERE user_id = %s AND operation = %s AND idempotency_key = %s", (resource_id, user_id, operation, key))
 
 
+def _review_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "tour_id": int(row["tour_id"]),
+        "name": row["name"],
+        "rating": int(row["rating"]),
+        "review_heading": row.get("review_heading") or "",
+        "review_point": row["review_point"],
+        "guide_rating": int(row.get("guide_rating") or 5),
+        "meeting_or_pickup_rating": int(row.get("meeting_or_pickup_rating") or 5),
+        "value_for_money_rating": int(row.get("value_for_money_rating") or 5),
+        "date": str(row.get("review_date")) if row.get("review_date") else None,
+        "source": row.get("source") or "",
+        "link": row.get("link"),
+        "show_on_home": bool(row.get("show_on_home")),
+    }
+
+
+def _attach_tour_reviews(connection: MySQLConnection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    tours = [row_to_dict(row) for row in rows]
+    if not tours:
+        return tours
+    tour_ids = [int(tour["id"]) for tour in tours]
+    placeholders = ", ".join("%s" for _ in tour_ids)
+    review_rows = _fetch_all(
+        connection,
+        f"SELECT * FROM reviews WHERE tour_id IN ({placeholders}) ORDER BY id",
+        tuple(tour_ids),
+    )
+    reviews_by_tour: dict[int, list[dict[str, Any]]] = {tour_id: [] for tour_id in tour_ids}
+    for row in review_rows:
+        review = _review_to_dict(row)
+        reviews_by_tour[review["tour_id"]].append(review)
+    for tour in tours:
+        tour["review_items"] = reviews_by_tour[int(tour["id"])]
+    return tours
+
+
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     tour = dict(row)
     for field in (
@@ -515,6 +588,8 @@ def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
         tour[field] = json.loads(value) if isinstance(value, str) else value
     for field in ("featured", "dark", "published"):
         tour[field] = bool(tour[field])
+    # Reviews now come from the related reviews table, not the legacy JSON column.
+    tour["review_items"] = []
     return tour
 
 
@@ -542,13 +617,76 @@ def list_tours(
             f"SELECT * FROM tours{where_clause} ORDER BY featured DESC, id DESC",
             tuple(parameters),
         )
-    return [row_to_dict(row) for row in rows]
+        tours = _attach_tour_reviews(connection, rows)
+    return tours
 
 
 def get_tour(tour_id: int) -> dict[str, Any] | None:
     with database() as connection:
         row = _fetch_one(connection, "SELECT * FROM tours WHERE id = %s AND published = TRUE", (tour_id,))
-    return row_to_dict(row) if row else None
+        tours = _attach_tour_reviews(connection, [row] if row else [])
+    return tours[0] if tours else None
+
+
+def _sync_tour_reviews(connection: MySQLConnection, tour_id: int, items: list[dict[str, Any]]) -> None:
+    existing_rows = _fetch_all(
+        connection,
+        "SELECT id, show_on_home FROM reviews WHERE tour_id = %s",
+        (tour_id,),
+    )
+    existing = {int(row["id"]): bool(row["show_on_home"]) for row in existing_rows}
+    retained_ids: set[int] = set()
+    now = _utc_now()
+    for item in items:
+        review_id = item.get("id")
+        name = str(item.get("name") or "").strip()
+        review_point = str(item.get("review_point") or item.get("review") or item.get("text") or "").strip()
+        if not name or not review_point:
+            continue
+        try:
+            rating = min(5, max(1, int(item.get("rating", 5))))
+        except (TypeError, ValueError):
+            rating = 5
+        component_ratings: list[int] = []
+        for field in ("guide_rating", "meeting_or_pickup_rating", "value_for_money_rating"):
+            try:
+                component_ratings.append(min(5, max(1, int(item.get(field, 5)))))
+            except (TypeError, ValueError):
+                component_ratings.append(5)
+        review_heading = str(item.get("review_heading") or "").strip()[:180]
+        raw_date = item.get("date")
+        review_date = (str(raw_date).strip()[:40] or None) if raw_date else None
+        values = (
+            name[:120], rating, review_heading, review_point[:10000],
+            *component_ratings, review_date,
+            str(item.get("source") or "").strip()[:100],
+            str(item.get("link") or "").strip()[:2048] or None,
+        )
+        if review_id is not None and int(review_id) in existing and int(review_id) not in retained_ids:
+            review_id = int(review_id)
+            retained_ids.add(review_id)
+            _execute(
+                connection,
+                """UPDATE reviews SET name = %s, rating = %s, review_heading = %s, review_point = %s,
+                guide_rating = %s, meeting_or_pickup_rating = %s, value_for_money_rating = %s,
+                review_date = %s, source = %s, link = %s, updated_at = %s WHERE id = %s AND tour_id = %s""",
+                values + (now, review_id, tour_id),
+            )
+        else:
+            review_id = _insert_and_get_id(
+                connection,
+                """INSERT INTO reviews
+                (tour_id, name, rating, review_heading, review_point, guide_rating,
+                meeting_or_pickup_rating, value_for_money_rating, review_date, source, link,
+                show_on_home, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)""",
+                (tour_id,) + values + (now, now),
+            )
+            retained_ids.add(review_id)
+    removed_ids = set(existing) - retained_ids
+    if removed_ids:
+        placeholders = ", ".join("%s" for _ in removed_ids)
+        _execute(connection, f"DELETE FROM reviews WHERE id IN ({placeholders})", tuple(removed_ids))
 
 
 def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any] | None:
@@ -564,11 +702,15 @@ def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any
     }
     values = {field: data.get(field, defaults.get(field)) for field in TOUR_COLUMNS}
     for field in (
-        "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "time_slots",
+        "highlights", "inclusions", "gallery_images", "faq_items", "time_slots",
         "categories", "destinations", "languages", "itinerary", "inclusion_groups", "exclusions",
         "pricing", "availability",
     ):
         values[field] = json.dumps(values[field])
+    # Keep the old JSON column empty for compatibility with databases created before
+    # reviews were normalized. All new review records are written to `reviews` below.
+    values["review_items"] = json.dumps([])
+    review_items = data.get("review_items", []) or []
     now = _utc_now()
     with database() as connection:
         if tour_id is None:
@@ -581,14 +723,19 @@ def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any
             )
             tour_id = new_id
         else:
+            existing_tour = _fetch_one(connection, "SELECT id FROM tours WHERE id = %s", (tour_id,))
+            if not existing_tour:
+                return None
             update_values = tuple(values[field] for field in TOUR_COLUMNS) + (now, tour_id)
             _execute(
                 connection,
                 f"UPDATE tours SET {', '.join(f'{field} = %s' for field in TOUR_COLUMNS)}, updated_at = %s WHERE id = %s",
                 update_values,
             )
+        _sync_tour_reviews(connection, int(tour_id), review_items)
         row = _fetch_one(connection, "SELECT * FROM tours WHERE id = %s", (tour_id,))
-    return row_to_dict(row) if row else None
+        tours = _attach_tour_reviews(connection, [row] if row else [])
+    return tours[0] if tours else None
 
 
 def delete_tour(tour_id: int) -> bool:
@@ -619,7 +766,7 @@ def delete_tours(tour_ids: list[int]) -> int:
             )
             _execute(
                 connection,
-                f"DELETE FROM demo_payments WHERE booking_id IN ({booking_placeholders})",
+                f"DELETE FROM razorpay_orders WHERE booking_id IN ({booking_placeholders})",
                 tuple(booking_ids),
             )
             _execute(
@@ -770,9 +917,18 @@ def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | No
         booking_id = _insert_and_get_id(
             connection,
             """INSERT INTO bookings
-            (user_id, tour_id, travel_date, travellers, special_requests, booking_status, payment_status, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, 'pending', 'unpaid', %s, %s)""",
-            (user_id, data["tour_id"], data["travel_date"], data["travellers"], data.get("special_requests", ""), now, now),
+            (user_id, tour_id, travel_date, travellers, contact_phone, special_requests, booking_status, payment_status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', 'unpaid', %s, %s)""",
+            (
+                user_id,
+                data["tour_id"],
+                data["travel_date"],
+                data["travellers"],
+                data.get("contact_phone", ""),
+                data.get("special_requests", ""),
+                now,
+                now,
+            ),
         )
         _complete_idempotency(connection, user_id, "create_booking", idempotency_key, booking_id)
         return _fetch_one(
@@ -806,6 +962,93 @@ def get_booking(booking_id: int) -> dict[str, Any] | None:
         )
 
 
+def create_razorpay_order(
+    razorpay_order_id: str,
+    booking_id: int,
+    user_id: int,
+    amount: int,
+    currency: str,
+    receipt: str,
+    terms_version: str,
+) -> None:
+    """Persist the server-created order before sending it to the browser."""
+    with database() as connection:
+        _execute(
+            connection,
+            """INSERT INTO razorpay_orders
+            (razorpay_order_id, booking_id, user_id, amount, currency, receipt, terms_version,
+             terms_accepted_at, payment_status, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'created', %s)""",
+            (
+                razorpay_order_id,
+                booking_id,
+                user_id,
+                amount,
+                currency,
+                receipt,
+                terms_version,
+                _utc_now(),
+                _utc_now(),
+            ),
+        )
+
+
+def complete_razorpay_payment(
+    razorpay_order_id: str,
+    razorpay_payment_id: str,
+    razorpay_signature: str,
+    user_id: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    """Record a verified Razorpay payment and mark its booking as paid atomically.
+
+    The order must belong to the requesting customer. A repeated callback for
+    the same payment is safe; a second payment for an already-paid booking is
+    rejected so it can be handled as an exception/refund instead.
+    """
+    with database() as connection:
+        order = _fetch_one(
+            connection,
+            """SELECT razorpay_orders.*, razorpay_orders.payment_status AS razorpay_payment_status,
+            bookings.booking_status, bookings.payment_status AS booking_payment_status
+            FROM razorpay_orders JOIN bookings ON bookings.id = razorpay_orders.booking_id
+            WHERE razorpay_orders.razorpay_order_id = %s AND razorpay_orders.user_id = %s
+            FOR UPDATE""",
+            (razorpay_order_id, user_id),
+        )
+        if not order:
+            return None, False
+
+        newly_verified = False
+        if order["razorpay_payment_status"] == "verified":
+            if order["razorpay_payment_id"] != razorpay_payment_id:
+                raise ValueError("This Razorpay order was already verified with another payment")
+            booking_id = int(order["booking_id"])
+        else:
+            if order["booking_status"] == "cancelled":
+                raise ValueError("Cancelled bookings cannot be paid")
+            if order["booking_payment_status"] == "paid":
+                raise ValueError("This booking has already been paid")
+            now = _utc_now()
+            _execute(
+                connection,
+                """UPDATE razorpay_orders
+                SET razorpay_payment_id = %s, razorpay_signature = %s,
+                    payment_status = 'verified', verified_at = %s
+                WHERE razorpay_order_id = %s""",
+                (razorpay_payment_id, razorpay_signature, now, razorpay_order_id),
+            )
+            _execute(
+                connection,
+                """UPDATE bookings SET booking_status = 'confirmed', payment_status = 'paid',
+                updated_at = %s WHERE id = %s""",
+                (now, int(order["booking_id"])),
+            )
+            booking_id = int(order["booking_id"])
+            newly_verified = True
+
+    return get_booking(booking_id), newly_verified
+
+
 def list_staff_bookings() -> list[dict[str, Any]]:
     with database() as connection:
         return _fetch_all(
@@ -818,15 +1061,12 @@ def list_staff_bookings() -> list[dict[str, Any]]:
         )
 
 
-def update_booking(booking_id: int, booking_status: str | None = None, payment_status: str | None = None) -> dict[str, Any] | None:
+def update_booking(booking_id: int, booking_status: str | None = None) -> dict[str, Any] | None:
     updates: list[str] = []
     parameters: list[Any] = []
     if booking_status is not None:
         updates.append("booking_status = %s")
         parameters.append(booking_status)
-    if payment_status is not None:
-        updates.append("payment_status = %s")
-        parameters.append(payment_status)
     if not updates:
         return get_booking(booking_id)
     updates.append("updated_at = %s")
@@ -845,7 +1085,8 @@ def update_tour_schedule(tour_id: int, capacity: int, departure_date: Any, guide
             (capacity, departure_date, guide_name or None, _utc_now(), tour_id),
         )
         row = _fetch_one(connection, "SELECT * FROM tours WHERE id = %s", (tour_id,))
-    return row_to_dict(row) if row else None
+        tours = _attach_tour_reviews(connection, [row] if row else [])
+    return tours[0] if tours else None
 
 
 def queue_booking_confirmation(booking_id: int, recipient: str, channel: str, requested_by: int | None) -> dict[str, Any]:
@@ -855,6 +1096,19 @@ def queue_booking_confirmation(booking_id: int, recipient: str, channel: str, re
             """INSERT INTO notification_logs (booking_id, channel, recipient, delivery_status, requested_by, created_at)
             VALUES (%s, %s, %s, 'queued', %s, %s)""",
             (booking_id, channel, recipient, requested_by, _utc_now()),
+        )
+        return _fetch_one(connection, "SELECT * FROM notification_logs WHERE id = %s", (notification_id,)) or {}
+
+
+def update_booking_confirmation_status(notification_id: int, delivery_status: str) -> dict[str, Any]:
+    """Store the provider hand-off result without retaining message contents."""
+    if delivery_status not in {"sent", "failed"}:
+        raise ValueError("Unsupported notification delivery status")
+    with database() as connection:
+        _execute(
+            connection,
+            "UPDATE notification_logs SET delivery_status = %s WHERE id = %s",
+            (delivery_status, notification_id),
         )
         return _fetch_one(connection, "SELECT * FROM notification_logs WHERE id = %s", (notification_id,)) or {}
 
@@ -929,50 +1183,6 @@ def delete_custom_journey(journey_id: int) -> bool:
     return rowcount > 0
 
 
-def create_demo_payment(data: dict[str, Any]) -> dict[str, Any]:
-    from uuid import uuid4
-
-    reference = f"DEMO-{uuid4().hex[:12].upper()}"
-    with database() as connection:
-        payment_id = _insert_and_get_id(
-            connection,
-            """INSERT INTO demo_payments
-            (booking_id, name, email, phone, tour_title, amount, payment_method, status, transaction_reference, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'paid', %s, %s)""",
-            (data.get("booking_id"), data["name"], data["email"], data["phone"], data["tour_title"], data["amount"], data["payment_method"], reference, _utc_now()),
-        )
-        row = _fetch_one(connection, "SELECT * FROM demo_payments WHERE id = %s", (payment_id,))
-    return row or {}
-
-
-def create_booking_demo_payment(booking: dict[str, Any], customer: dict[str, Any], payment_method: str, idempotency_key: str | None = None) -> dict[str, Any]:
-    data = {"booking_id": booking["id"], "payment_method": payment_method}
-    user_id = int(customer["id"])
-    with database() as connection:
-        existing_id = _claim_idempotency(connection, user_id, "booking_payment", idempotency_key, data)
-        if existing_id is not None:
-            return _fetch_one(connection, "SELECT * FROM demo_payments WHERE id = %s", (existing_id,)) or {}
-        locked = _fetch_one(connection, "SELECT payment_status, booking_status FROM bookings WHERE id = %s FOR UPDATE", (booking["id"],))
-        if not locked or locked["booking_status"] == "cancelled":
-            raise ValueError("Cancelled or missing bookings cannot be paid")
-        existing = _fetch_one(connection, "SELECT * FROM demo_payments WHERE booking_id = %s ORDER BY id LIMIT 1", (booking["id"],))
-        if existing:
-            if idempotency_key:
-                _complete_idempotency(connection, user_id, "booking_payment", idempotency_key, int(existing["id"]))
-                return existing
-            raise ValueError("This booking is already paid")
-        reference = f"DEMO-{secrets.token_hex(6).upper()}"
-        payment_id = _insert_and_get_id(connection, """INSERT INTO demo_payments (booking_id, name, email, phone, tour_title, amount, payment_method, status, transaction_reference, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, 'paid', %s, %s)""", (booking["id"], customer["name"], customer["email"], customer.get("phone", ""), booking["tour_title"], float(booking["price"]) * int(booking["travellers"]), payment_method, reference, _utc_now()))
-        _execute(connection, "UPDATE bookings SET booking_status = 'confirmed', payment_status = 'paid', updated_at = %s WHERE id = %s", (_utc_now(), booking["id"]))
-        _complete_idempotency(connection, user_id, "booking_payment", idempotency_key, payment_id)
-        return _fetch_one(connection, "SELECT * FROM demo_payments WHERE id = %s", (payment_id,)) or {}
-
-
-def list_demo_payments() -> list[dict[str, Any]]:
-    with database() as connection:
-        return _fetch_all(connection, "SELECT * FROM demo_payments ORDER BY id DESC")
-
-
 def _paginate_admin_records(
     table: str,
     search_columns: tuple[str, ...],
@@ -1001,7 +1211,100 @@ def paginate_admin_tours(page: int, page_size: int, search: str | None = None) -
     rows, total = _paginate_admin_records(
         "tours", ("title", "description", "city", "mode", "trip_type", "category", "duration", "tag"), page, page_size, search, "featured DESC, id DESC"
     )
-    return [row_to_dict(row) for row in rows], total
+    with database() as connection:
+        # Load related reviews in one query for the current page.
+        tour_ids = [int(row["id"]) for row in rows]
+        if tour_ids:
+            placeholders = ", ".join("%s" for _ in tour_ids)
+            review_rows = _fetch_all(
+                connection,
+                f"SELECT * FROM reviews WHERE tour_id IN ({placeholders}) ORDER BY id",
+                tuple(tour_ids),
+            )
+        else:
+            review_rows = []
+    tours = [row_to_dict(row) for row in rows]
+    by_id = {int(tour["id"]): tour for tour in tours}
+    for tour in tours:
+        tour["review_items"] = []
+    for review_row in review_rows:
+        review = _review_to_dict(review_row)
+        if review["tour_id"] in by_id:
+            by_id[review["tour_id"]]["review_items"].append(review)
+    return tours, total
+
+
+def list_home_reviews() -> list[dict[str, Any]]:
+    with database() as connection:
+        rows = _fetch_all(
+            connection,
+            """SELECT r.*, t.title AS tour_name FROM reviews r
+            JOIN tours t ON t.id = r.tour_id
+            WHERE r.show_on_home = TRUE
+            ORDER BY r.id DESC LIMIT 3""",
+        )
+    return [{**_review_to_dict(row), "tour_name": row["tour_name"]} for row in rows]
+
+
+def paginate_admin_reviews(
+    page: int, page_size: int, search: str | None = None,
+) -> tuple[list[dict[str, Any]], int, int]:
+    where_clause = ""
+    parameters: tuple[Any, ...] = ()
+    if search:
+        where_clause = " WHERE LOWER(CONCAT_WS(' ', r.name, r.review_heading, r.review_point, r.source, t.title)) LIKE LOWER(%s)"
+        parameters = (f"%{search.strip()}%",)
+    offset = (page - 1) * page_size
+    with database() as connection:
+        total_row = _fetch_one(
+            connection,
+            "SELECT COUNT(*) AS total FROM reviews r JOIN tours t ON t.id = r.tour_id" + where_clause,
+            parameters,
+        )
+        rows = _fetch_all(
+            connection,
+            """SELECT r.*, t.title AS tour_name FROM reviews r
+            JOIN tours t ON t.id = r.tour_id""" + where_clause
+            + " ORDER BY r.id DESC LIMIT %s OFFSET %s",
+            parameters + (page_size, offset),
+        )
+        home_count_row = _fetch_one(
+            connection, "SELECT COUNT(*) AS total FROM reviews WHERE show_on_home = TRUE",
+        )
+    items = [{**_review_to_dict(row), "tour_name": row["tour_name"]} for row in rows]
+    return items, int((total_row or {"total": 0})["total"]), int((home_count_row or {"total": 0})["total"])
+
+
+def set_review_home_visibility(review_id: int, enabled: bool) -> dict[str, Any] | None:
+    with database() as connection:
+        lock_name = "nomad_wanderers_home_reviews_limit"
+        lock = _fetch_one(connection, "SELECT GET_LOCK(%s, 5) AS acquired", (lock_name,))
+        if not lock or int(lock["acquired"] or 0) != 1:
+            raise RuntimeError("The home review selection is busy. Please try again.")
+        try:
+            row = _fetch_one(connection, "SELECT id, show_on_home FROM reviews WHERE id = %s FOR UPDATE", (review_id,))
+            if not row:
+                return None
+            if enabled and not bool(row["show_on_home"]):
+                count_row = _fetch_one(connection, "SELECT COUNT(*) AS total FROM reviews WHERE show_on_home = TRUE")
+                if int((count_row or {"total": 0})["total"]) >= 3:
+                    raise ValueError("Only three reviews can be shown in Traveller stories at a time.")
+            _execute(
+                connection,
+                "UPDATE reviews SET show_on_home = %s, updated_at = %s WHERE id = %s",
+                (enabled, _utc_now(), review_id),
+            )
+            updated = _fetch_one(
+                connection,
+                """SELECT r.*, t.title AS tour_name FROM reviews r
+                JOIN tours t ON t.id = r.tour_id WHERE r.id = %s""",
+                (review_id,),
+            )
+            # Commit before releasing the named lock so another toggle sees this selection.
+            connection.commit()
+        finally:
+            _fetch_one(connection, "SELECT RELEASE_LOCK(%s) AS released", (lock_name,))
+    return {**_review_to_dict(updated), "tour_name": updated["tour_name"]} if updated else None
 
 
 def paginate_public_tours(
@@ -1041,7 +1344,8 @@ def paginate_public_tours(
             f"SELECT * FROM tours{where_clause} ORDER BY featured DESC, id DESC LIMIT %s OFFSET %s",
             tuple(parameters) + (page_size, offset),
         )
-    return [row_to_dict(row) for row in rows], int((total_row or {"total": 0})["total"])
+        tours = _attach_tour_reviews(connection, rows)
+    return tours, int((total_row or {"total": 0})["total"])
 
 
 def paginate_contact_enquiries(page: int, page_size: int, search: str | None = None) -> tuple[list[dict[str, Any]], int]:
@@ -1056,16 +1360,10 @@ def paginate_custom_journeys(page: int, page_size: int, search: str | None = Non
     )
 
 
-def paginate_demo_payments(page: int, page_size: int, search: str | None = None) -> tuple[list[dict[str, Any]], int]:
-    return _paginate_admin_records(
-        "demo_payments", ("name", "email", "phone", "tour_title", "payment_method", "status", "transaction_reference"), page, page_size, search
-    )
-
-
-def admin_report() -> dict[str, int | float]:
+def admin_report() -> dict[str, int]:
     with database() as connection:
         users = _fetch_one(connection, "SELECT COUNT(*) AS total FROM users WHERE role = 'customer'") or {"total": 0}
         bookings = _fetch_one(connection, "SELECT COUNT(*) AS total FROM bookings") or {"total": 0}
         confirmed = _fetch_one(connection, "SELECT COUNT(*) AS total FROM bookings WHERE booking_status = 'confirmed'") or {"total": 0}
-        paid = _fetch_one(connection, "SELECT COALESCE(SUM(amount), 0) AS total FROM demo_payments WHERE status = 'paid'") or {"total": 0}
-    return {"customers": int(users["total"]), "bookings": int(bookings["total"]), "confirmed_bookings": int(confirmed["total"]), "demo_payment_total": float(paid["total"])}
+        razorpay_payments = _fetch_one(connection, "SELECT COUNT(*) AS total FROM razorpay_orders WHERE payment_status = 'verified'") or {"total": 0}
+    return {"customers": int(users["total"]), "bookings": int(bookings["total"]), "confirmed_bookings": int(confirmed["total"]), "razorpay_payments": int(razorpay_payments["total"])}

@@ -14,22 +14,26 @@ import json
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 import db_models
 import config
+import whatsapp
 
 
 ENV_PATH = Path(__file__).with_name(".env")
 TOUR_UPLOADS_PATH = Path(__file__).with_name("uploads") / "tours"
-PAYMENT_UPLOADS_PATH = Path(__file__).with_name("uploads") / "payments"
+RAZORPAY_ORDERS_URL = "https://api.razorpay.com/v1/orders"
 MAX_TOUR_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_TOUR_VIDEO_BYTES = 100 * 1024 * 1024
 TOUR_IMAGE_TYPES = {
@@ -69,7 +73,6 @@ TripType = Literal[
 ScheduleType = Literal["Daily", "Specific date"]
 UserRole = Literal["customer", "admin", "operations", "support"]
 BookingStatus = Literal["pending", "confirmed", "cancelled", "completed"]
-PaymentStatus = Literal["unpaid", "paid", "refunded"]
 ResponseItem = TypeVar("ResponseItem")
 
 
@@ -93,6 +96,45 @@ class ItineraryDay(BaseModel):
 class InclusionGroup(BaseModel):
     title: str = Field(min_length=2, max_length=80)
     items: list[str] = Field(default_factory=list, max_length=30)
+
+
+class TourReviewInput(BaseModel):
+    id: int | None = Field(default=None, ge=1)
+    name: str = Field(min_length=1, max_length=120)
+    rating: int = Field(default=5, ge=1, le=5)
+    review_heading: str = Field(default="", max_length=180)
+    review_point: str = Field(min_length=1, max_length=10000)
+    guide_rating: int = Field(default=5, ge=1, le=5)
+    meeting_or_pickup_rating: int = Field(default=5, ge=1, le=5)
+    value_for_money_rating: int = Field(default=5, ge=1, le=5)
+    date: str | None = Field(default=None, max_length=40)
+    source: str = Field(default="", max_length=100)
+    link: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+
+    @field_validator("name", "review_point")
+    @classmethod
+    def review_text_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+
+class TourReview(BaseModel):
+    id: int
+    tour_id: int
+    name: str
+    rating: int
+    review_heading: str
+    review_point: str
+    guide_rating: int
+    meeting_or_pickup_rating: int
+    value_for_money_rating: int
+    date: str | None
+    source: str
+    link: str | None
+    show_on_home: bool
+    tour_name: str | None = None
 
 
 class PricingTier(BaseModel):
@@ -140,7 +182,7 @@ class TourInput(BaseModel):
     inclusions: list[str] = Field(default_factory=list, max_length=12)
     gallery_images: list[str] = Field(default_factory=list, max_length=10)
     faq_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
-    review_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+    review_items: list[TourReviewInput] = Field(default_factory=list, max_length=50)
     meeting_details: str = Field(default="", max_length=2000)
     start_meeting_point: str = Field(default="", max_length=300)
     start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
@@ -169,6 +211,7 @@ class TourInput(BaseModel):
 
 class Tour(TourInput):
     model_config = ConfigDict(from_attributes=True)
+    review_items: list[TourReview] = Field(default_factory=list, max_length=50)
     id: int
     created_at: datetime
     updated_at: datetime
@@ -181,6 +224,18 @@ class CarouselSelection(BaseModel):
 class AdminCarouselResponse(BaseModel):
     tour_ids: list[int] = Field(default_factory=list)
     tours: list[Tour]
+
+
+class AdminReviewList(BaseModel):
+    items: list[TourReview]
+    total: int
+    page: int
+    page_size: int
+    home_enabled_count: int
+
+
+class ReviewHomeUpdate(BaseModel):
+    enabled: bool
 
 
 class TourBulkDelete(BaseModel):
@@ -246,6 +301,7 @@ class BookingInput(BaseModel):
     tour_id: int = Field(gt=0)
     travel_date: date
     travellers: int = Field(ge=1, le=20)
+    contact_phone: str = Field(min_length=8, max_length=40)
     special_requests: str = Field(default="", max_length=4000)
 
 
@@ -259,6 +315,7 @@ class Booking(BaseModel):
     price: float
     travel_date: date
     travellers: int
+    contact_phone: str
     special_requests: str
     booking_status: str
     payment_status: str
@@ -273,7 +330,6 @@ class StaffBooking(Booking):
 
 class BookingUpdate(BaseModel):
     booking_status: BookingStatus | None = None
-    payment_status: PaymentStatus | None = None
 
 
 class TourScheduleUpdate(BaseModel):
@@ -290,19 +346,10 @@ class AdminReport(BaseModel):
     customers: int
     bookings: int
     confirmed_bookings: int
-    demo_payment_total: float
-
-
-class SiteSettings(BaseModel):
-    """Public payment details managed by an administrator."""
-
-    upi_id: str = Field(min_length=3, max_length=120, pattern=r"^[^\s@]+@[^\s@]+$")
-    upi_number: str = Field(min_length=5, max_length=40)
-    upi_qr_image_url: str = Field(default="", max_length=2048)
+    razorpay_payments: int
 
 
 RequestStatus = Literal["new", "in_progress", "quoted", "closed"]
-PaymentMethod = Literal["upi", "credit_card", "debit_card"]
 
 
 class ContactEnquiryInput(BaseModel):
@@ -313,32 +360,32 @@ class ContactEnquiryInput(BaseModel):
     message: str = Field(min_length=5, max_length=4000)
 
 
-class DemoPaymentInput(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-    email: str = Field(min_length=5, max_length=254)
-    phone: str = Field(min_length=5, max_length=40)
-    tour_title: str = Field(min_length=3, max_length=180)
-    amount: float = Field(gt=0, le=10_000_000)
-    payment_method: PaymentMethod
+class RazorpayCreateOrderInput(BaseModel):
+    """Checkout order details, bound to a booking owned by the customer."""
+
+    booking_id: int = Field(gt=0)
+    amount: int = Field(ge=100, le=1_000_000_000, description="Amount in paise")
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    receipt: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_@.\-/]+$")
+    terms_accepted: bool = Field(description="Customer acknowledgement of the payment terms")
 
 
-class DemoPayment(DemoPaymentInput):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    booking_id: int | None = None
-    status: Literal["paid"]
-    transaction_reference: str
-    created_at: datetime
+class RazorpayOrder(BaseModel):
+    order_id: str
+    amount: int
+    currency: str
+    key_id: str
 
 
-class DemoPaymentResult(BaseModel):
-    payment: DemoPayment
-    email_confirmation: str
-    whatsapp_confirmation: str
+class RazorpayVerifyPaymentInput(BaseModel):
+    razorpay_payment_id: str = Field(min_length=1, max_length=64)
+    razorpay_order_id: str = Field(min_length=1, max_length=64)
+    razorpay_signature: str = Field(min_length=1, max_length=128)
 
 
-class BookingPaymentInput(BaseModel):
-    payment_method: PaymentMethod
+class RazorpayVerificationResult(BaseModel):
+    success: bool = True
+    booking: Booking
 
 
 class ContactEnquiry(ContactEnquiryInput):
@@ -452,6 +499,58 @@ support_required = require_roles("admin", "support")
 staff_required = require_roles("admin", "operations", "support")
 
 
+def booking_amount_in_paise(booking: dict[str, object]) -> int:
+    """Convert the saved INR booking price to Razorpay's smallest unit."""
+    total = Decimal(str(booking["price"])) * Decimal(str(booking["travellers"]))
+    return int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def create_razorpay_order_request(amount: int, currency: str, receipt: str) -> dict[str, object]:
+    """Create a Razorpay order with server-only Basic authentication."""
+    if not config.RAZORPAY_KEY_ID or not config.RAZORPAY_KEY_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to the backend environment.",
+        )
+
+    auth_value = base64.b64encode(
+        f"{config.RAZORPAY_KEY_ID}:{config.RAZORPAY_KEY_SECRET}".encode("utf-8"),
+    ).decode("ascii")
+    request = urlrequest.Request(
+        RAZORPAY_ORDERS_URL,
+        data=json.dumps(
+            {"amount": amount, "currency": currency, "receipt": receipt},
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        headers={
+            "Authorization": f"Basic {auth_value}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urlerror.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Razorpay could not create the order (HTTP {error.code}).",
+        ) from error
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to reach Razorpay. Please try again.",
+        ) from error
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Razorpay returned an invalid order response.",
+        )
+    return payload
+
+
 app = FastAPI(title="Nomad Wanderers API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -468,8 +567,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
 )
 TOUR_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
-PAYMENT_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=TOUR_UPLOADS_PATH.parent), name="uploads")
+app.mount("/uploads/tours", StaticFiles(directory=TOUR_UPLOADS_PATH), name="tour-uploads")
 
 
 @app.on_event("startup")
@@ -482,15 +580,14 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": db_models.health()}
 
 
-@app.get("/api/site-settings", response_model=SiteSettings)
-def get_site_settings() -> SiteSettings:
-    """Expose the payment details needed to render the booking UPI QR code."""
-    return SiteSettings(**db_models.get_site_settings())
-
-
 @app.get("/api/home-carousel", response_model=list[Tour])
 def get_home_carousel() -> list[Tour]:
     return [Tour(**tour) for tour in db_models.list_carousel_tours()]
+
+
+@app.get("/api/home-reviews", response_model=list[TourReview])
+def get_home_reviews() -> list[TourReview]:
+    return [TourReview(**review) for review in db_models.list_home_reviews()]
 
 
 @app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
@@ -510,25 +607,6 @@ async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
     (TOUR_UPLOADS_PATH / filename).write_bytes(contents)
     base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
     return {"image_url": f"{base_url}/uploads/tours/{filename}"}
-
-
-@app.post("/api/admin/payment-scanner", dependencies=[Depends(admin_required)])
-async def upload_payment_scanner(image: UploadFile = File(...)) -> dict[str, str]:
-    """Store the administrator's payment scanner and return its public URL."""
-    extension = TOUR_IMAGE_TYPES.get(image.content_type or "")
-    if not extension:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Upload a JPEG, PNG, or WebP payment scanner.")
-
-    contents = await image.read(MAX_TOUR_IMAGE_BYTES + 1)
-    if not contents:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The payment scanner file is empty.")
-    if len(contents) > MAX_TOUR_IMAGE_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payment scanner images must be 5 MB or smaller.")
-
-    filename = f"{uuid.uuid4().hex}{extension}"
-    (PAYMENT_UPLOADS_PATH / filename).write_bytes(contents)
-    base_url = os.getenv("ASSET_BASE_URL", "http://localhost:8000").rstrip("/")
-    return {"image_url": f"{base_url}/uploads/payments/{filename}"}
 
 
 @app.post("/api/admin/tour-videos", dependencies=[Depends(admin_required)])
@@ -555,19 +633,6 @@ def get_admin_profile(account: dict[str, object] = Depends(admin_required)) -> d
         "username": str(account.get("username") or ADMIN_USERNAME),
         "role": "admin",
     }
-
-
-@app.get("/api/admin/settings", response_model=SiteSettings)
-def get_admin_settings(_: dict[str, object] = Depends(admin_required)) -> SiteSettings:
-    return SiteSettings(**db_models.get_site_settings())
-
-
-@app.put("/api/admin/settings", response_model=SiteSettings)
-def update_admin_settings(data: SiteSettings, _: dict[str, object] = Depends(admin_required)) -> SiteSettings:
-    values = {key: value.strip() for key, value in data.model_dump().items()}
-    if not values["upi_id"] or not values["upi_number"]:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UPI ID and UPI number are required")
-    return SiteSettings(**db_models.save_site_settings(values))
 
 
 @app.get("/api/admin/carousel", response_model=AdminCarouselResponse)
@@ -604,6 +669,33 @@ def update_admin_carousel(data: CarouselSelection, _: dict[str, object] = Depend
         tour_ids=tour_ids,
         tours=[Tour(**tour) for tour in tours],
     )
+
+
+@app.get("/api/admin/reviews", response_model=AdminReviewList, dependencies=[Depends(admin_required)])
+def list_admin_reviews(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=6, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=160),
+) -> AdminReviewList:
+    items, total, home_enabled_count = db_models.paginate_admin_reviews(page, page_size, search)
+    return AdminReviewList(
+        items=[TourReview(**review) for review in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        home_enabled_count=home_enabled_count,
+    )
+
+
+@app.put("/api/admin/reviews/{review_id}/home", response_model=TourReview, dependencies=[Depends(admin_required)])
+def update_review_home_visibility(review_id: int, data: ReviewHomeUpdate) -> TourReview:
+    try:
+        review = db_models.set_review_home_visibility(review_id, data.enabled)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    if not review:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found")
+    return TourReview(**review)
 
 
 @app.post("/api/auth/register", response_model=Account, status_code=status.HTTP_201_CREATED)
@@ -719,7 +811,13 @@ def create_booking(data: BookingInput, user: dict[str, object] = Depends(custome
     if not db_models.get_tour(data.tour_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tour not found or unavailable")
     try:
-        booking = db_models.create_booking(int(user["id"]), data.model_dump(), idempotency_key)
+        contact_phone = f"+{whatsapp.normalise_recipient(data.contact_phone)}"
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    booking_data = data.model_dump()
+    booking_data["contact_phone"] = contact_phone
+    try:
+        booking = db_models.create_booking(int(user["id"]), booking_data, idempotency_key)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if not booking:
@@ -730,6 +828,152 @@ def create_booking(data: BookingInput, user: dict[str, object] = Depends(custome
 @app.get("/api/bookings/me", response_model=list[Booking])
 def list_my_bookings(user: dict[str, object] = Depends(customer_required)) -> list[Booking]:
     return [Booking(**booking) for booking in db_models.list_user_bookings(int(user["id"]))]
+
+
+@app.post("/api/create-order", response_model=RazorpayOrder)
+def create_razorpay_order(
+    data: RazorpayCreateOrderInput,
+    user: dict[str, object] = Depends(customer_required),
+) -> RazorpayOrder:
+    """Create a Razorpay Standard Checkout order for the customer's booking."""
+    booking = db_models.get_booking(data.booking_id)
+    if not booking or int(booking["user_id"]) != int(user["id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    if booking["booking_status"] == "cancelled":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancelled bookings cannot be paid")
+    if booking["payment_status"] == "paid":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This booking has already been paid")
+    if not data.terms_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Accept the Payment Terms & Conditions before paying.",
+        )
+
+    currency = data.currency.upper()
+    if currency != "INR":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Bookings can only be paid in INR")
+    expected_amount = booking_amount_in_paise(booking)
+    if expected_amount < 100:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Razorpay payments must be at least 100 paise")
+    if data.amount != expected_amount:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Payment amount does not match this booking")
+
+    razorpay_order = create_razorpay_order_request(expected_amount, currency, data.receipt)
+    order_id = razorpay_order["id"]
+    assert isinstance(order_id, str)  # Checked by create_razorpay_order_request.
+    db_models.create_razorpay_order(
+        razorpay_order_id=order_id,
+        booking_id=data.booking_id,
+        user_id=int(user["id"]),
+        amount=expected_amount,
+        currency=currency,
+        receipt=data.receipt,
+        terms_version="2026-09-19",
+    )
+    return RazorpayOrder(
+        order_id=order_id,
+        amount=expected_amount,
+        currency=currency,
+        key_id=config.RAZORPAY_KEY_ID or "",
+    )
+
+
+def deliver_whatsapp_booking_confirmation(
+    booking: dict[str, object],
+    recipient: str,
+    requested_by: int | None,
+) -> dict[str, object]:
+    """Hand a confirmation template to Meta and persist the hand-off result."""
+    normalised_recipient = whatsapp.normalise_recipient(recipient)
+    notification = db_models.queue_booking_confirmation(
+        int(booking["id"]),
+        f"+{normalised_recipient}",
+        "whatsapp",
+        requested_by,
+    )
+    try:
+        whatsapp.send_booking_confirmation(booking, normalised_recipient)
+    except (whatsapp.WhatsAppConfigurationError, whatsapp.WhatsAppDeliveryError):
+        return db_models.update_booking_confirmation_status(int(notification["id"]), "failed")
+    return db_models.update_booking_confirmation_status(int(notification["id"]), "sent")
+
+
+def deliver_booking_whatsapp_confirmations(
+    booking: dict[str, object],
+    profile_phone: str,
+    requested_by: int | None,
+) -> list[dict[str, object]]:
+    """Send the confirmation to the booking contact and configured admins."""
+    traveller_phone = str(booking.get("contact_phone") or profile_phone).strip()
+    if not traveller_phone:
+        raise ValueError("The traveller has no WhatsApp number on this booking.")
+
+    notifications = []
+    delivered_numbers: set[str] = set()
+    for index, recipient in enumerate((traveller_phone, *config.META_WHATSAPP_ADMIN_RECIPIENTS)):
+        try:
+            normalised_recipient = whatsapp.normalise_recipient(recipient)
+        except ValueError:
+            # A malformed admin setting must not prevent a traveller's paid
+            # booking confirmation. The traveller number remains mandatory.
+            if index == 0:
+                raise
+            continue
+        if normalised_recipient in delivered_numbers:
+            continue
+        delivered_numbers.add(normalised_recipient)
+        notifications.append(
+            deliver_whatsapp_booking_confirmation(booking, normalised_recipient, requested_by)
+        )
+    return notifications
+
+
+@app.post("/api/verify-payment", response_model=RazorpayVerificationResult)
+def verify_razorpay_payment(
+    data: RazorpayVerifyPaymentInput,
+    user: dict[str, object] = Depends(customer_required),
+) -> RazorpayVerificationResult:
+    """Verify Checkout's HMAC signature before marking a booking as paid."""
+    if not config.RAZORPAY_KEY_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Razorpay is not configured.",
+        )
+    signature_payload = f"{data.razorpay_order_id}|{data.razorpay_payment_id}".encode("utf-8")
+    expected_signature = hmac.new(
+        config.RAZORPAY_KEY_SECRET.encode("utf-8"),
+        signature_payload,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected_signature, data.razorpay_signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Razorpay payment signature")
+
+    try:
+        booking, newly_verified = db_models.complete_razorpay_payment(
+            razorpay_order_id=data.razorpay_order_id,
+            razorpay_payment_id=data.razorpay_payment_id,
+            razorpay_signature=data.razorpay_signature,
+            user_id=int(user["id"]),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Razorpay order not found")
+    if newly_verified:
+        customer = db_models.get_user(int(booking["user_id"]))
+        # Messaging cannot change the outcome of a verified payment. Any
+        # provider error is recorded for staff to resend later.
+        try:
+            deliver_booking_whatsapp_confirmations(
+                booking,
+                str((customer or {}).get("phone", "")),
+                None,
+            )
+        except ValueError:
+            # A legacy booking might not yet have a saved contact number.
+            # Never turn a successfully paid booking into a failed response.
+            pass
+    return RazorpayVerificationResult(success=True, booking=Booking(**booking))
 
 
 @app.get("/api/bookings/{booking_id}/confirmation")
@@ -754,25 +998,6 @@ def download_booking_confirmation(booking_id: int, user: dict[str, object] = Dep
     )
 
 
-@app.post("/api/bookings/{booking_id}/demo-payment", response_model=DemoPaymentResult)
-def pay_booking_in_demo(booking_id: int, data: BookingPaymentInput, user: dict[str, object] = Depends(customer_required), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=8, max_length=200)) -> DemoPaymentResult:
-    booking = db_models.get_booking(booking_id)
-    if not booking or int(booking["user_id"]) != int(user["id"]):
-        raise HTTPException(status_code=404, detail="Booking not found")
-    if booking["booking_status"] == "cancelled":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancelled bookings cannot be paid")
-    try:
-        payment_row = db_models.create_booking_demo_payment(booking, user, data.payment_method, idempotency_key)
-    except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    payment = DemoPayment(**payment_row)
-    return DemoPaymentResult(
-        payment=payment,
-        email_confirmation=f"Demo email confirmation prepared for {payment.email}.",
-        whatsapp_confirmation=f"Demo WhatsApp template prepared for {payment.phone}.",
-    )
-
-
 @app.get("/api/staff/bookings", response_model=list[StaffBooking])
 def list_staff_bookings(_: dict[str, object] = Depends(staff_required)) -> list[StaffBooking]:
     return [StaffBooking(**booking) for booking in db_models.list_staff_bookings()]
@@ -781,13 +1006,11 @@ def list_staff_bookings(_: dict[str, object] = Depends(staff_required)) -> list[
 @app.patch("/api/staff/bookings/{booking_id}", response_model=StaffBooking)
 def update_staff_booking(booking_id: int, data: BookingUpdate, account: dict[str, object] = Depends(staff_required)) -> StaffBooking:
     role = str(account["role"])
-    if role == "support" and (data.booking_status != "cancelled" or data.payment_status is not None):
+    if role == "support" and data.booking_status != "cancelled":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Support can only cancel bookings")
-    if role == "operations" and data.payment_status is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin can update payment status")
-    if data.booking_status is None and data.payment_status is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Select a booking or payment status to update")
-    booking = db_models.update_booking(booking_id, data.booking_status, data.payment_status)
+    if data.booking_status is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Select a booking status to update")
+    booking = db_models.update_booking(booking_id, data.booking_status)
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return StaffBooking(**booking)
@@ -811,17 +1034,45 @@ def resend_booking_confirmation(booking_id: int, data: ConfirmationRequest, acco
     booking = db_models.get_booking(booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    queued = []
+    notifications = []
+    whatsapp_sent = 0
+    email_queued = 0
     for channel in data.channels:
         if channel == "email":
             recipient = str(booking["customer_email"])
+            notifications.append(
+                db_models.queue_booking_confirmation(
+                    booking_id,
+                    recipient,
+                    channel,
+                    account.get("id") if isinstance(account.get("id"), int) else None,
+                )
+            )
+            email_queued += 1
         else:
             customer = db_models.get_user(int(booking["user_id"]))
-            recipient = str((customer or {}).get("phone", ""))
-            if not recipient:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The traveller has no WhatsApp number on their profile")
-        queued.append(db_models.queue_booking_confirmation(booking_id, recipient, channel, account.get("id") if isinstance(account.get("id"), int) else None))
-    return {"message": "Confirmation delivery queued. Configure an email and WhatsApp provider to send it.", "notifications": queued}
+            try:
+                whatsapp_notifications = deliver_booking_whatsapp_confirmations(
+                    booking,
+                    str((customer or {}).get("phone", "")),
+                    account.get("id") if isinstance(account.get("id"), int) else None,
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+            notifications.extend(whatsapp_notifications)
+            whatsapp_sent += sum(
+                int(notification.get("delivery_status") == "sent")
+                for notification in whatsapp_notifications
+            )
+
+    summaries = []
+    if whatsapp_sent:
+        summaries.append(f"{whatsapp_sent} WhatsApp confirmation sent")
+    elif "whatsapp" in data.channels:
+        summaries.append("WhatsApp delivery failed; check the provider configuration")
+    if email_queued:
+        summaries.append(f"{email_queued} email confirmation queued")
+    return {"message": "; ".join(summaries), "notifications": notifications}
 
 
 @app.get("/api/staff/contact-enquiries", response_model=PaginatedResponse[ContactEnquiry])
@@ -908,26 +1159,6 @@ def update_admin_user_access(user_id: int, data: StaffAccountUpdate) -> Account:
 @app.post("/api/contact-enquiries", response_model=ContactEnquiry, status_code=status.HTTP_201_CREATED)
 def create_contact_enquiry(data: ContactEnquiryInput) -> ContactEnquiry:
     return ContactEnquiry(**db_models.create_contact_enquiry(data.model_dump()))
-
-
-@app.post("/api/demo-payments", response_model=DemoPaymentResult, status_code=status.HTTP_201_CREATED)
-def create_demo_payment(data: DemoPaymentInput) -> DemoPaymentResult:
-    payment = DemoPayment(**db_models.create_demo_payment(data.model_dump()))
-    return DemoPaymentResult(
-        payment=payment,
-        email_confirmation=f"Demo email confirmation prepared for {payment.email}.",
-        whatsapp_confirmation=f"Demo WhatsApp template prepared for {payment.phone}.",
-    )
-
-
-@app.get("/api/admin/demo-payments", response_model=PaginatedResponse[DemoPayment], dependencies=[Depends(admin_required)])
-def list_admin_demo_payments(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=6, ge=1, le=100),
-    search: str | None = Query(default=None, max_length=160),
-) -> PaginatedResponse[DemoPayment]:
-    items, total = db_models.paginate_demo_payments(page, page_size, search)
-    return PaginatedResponse(items=[DemoPayment(**payment) for payment in items], total=total, page=page, page_size=page_size)
 
 
 @app.get("/api/admin/contact-enquiries", response_model=PaginatedResponse[ContactEnquiry], dependencies=[Depends(admin_required)])

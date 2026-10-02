@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PaymentTermsAcceptance } from "./PaymentTerms";
 import { formatApiError } from "./apiError";
 
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` });
@@ -9,14 +10,10 @@ const formatDate = (value) =>
     year: "numeric",
   });
 const formatInr = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
-const defaultUpiId = "919619952139@upi";
-const defaultUpiNumber = "+91 96199 52139";
-const whatsAppNumber = "919619952139";
 
 export default function UserPortal({
   apiBaseUrl,
   session,
-  siteSettings = {},
   onLogout,
 }) {
   const [account, setAccount] = useState(null);
@@ -372,7 +369,17 @@ export default function UserPortal({
       {paymentBooking && (
         <PaymentDetailsModal
           booking={paymentBooking}
-          siteSettings={siteSettings}
+          apiBaseUrl={apiBaseUrl}
+          token={session.token}
+          onPaymentComplete={(paidBooking) => {
+            setBookings((current) =>
+              current.map((item) =>
+                item.id === paidBooking.id ? paidBooking : item,
+              ),
+            );
+            setPaymentBooking(null);
+            setStatus(`Payment for ${paidBooking.tour_title} was completed.`);
+          }}
           onClose={() => setPaymentBooking(null)}
         />
       )}
@@ -433,21 +440,115 @@ function JourneyCard({ item, onPay, onDownload, expanded = false }) {
   );
 }
 
-function PaymentDetailsModal({ booking, siteSettings, onClose }) {
-  const upiId = siteSettings?.upi_id || defaultUpiId;
-  const upiNumber = siteSettings?.upi_number || defaultUpiNumber;
+function PaymentDetailsModal({
+  booking,
+  apiBaseUrl,
+  token,
+  onPaymentComplete,
+  onClose,
+}) {
   const amount = Number(booking.price || 0) * Number(booking.travellers || 1);
-  const qrData = `upi://pay?pa=${encodeURIComponent(
-    upiId,
-  )}&pn=Nomad%20Wanderers&am=${amount.toFixed(2)}&cu=INR`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(
-    qrData,
-  )}`;
-  const paymentScannerUrl = siteSettings?.upi_qr_image_url || qrCodeUrl;
-  const whatsAppMessage = encodeURIComponent(
-    `Hi Nomad Wanderers, I have completed payment for ${booking.tour_title} booking #${booking.id}. I am sharing the payment screenshot for verification.`,
-  );
-  const whatsAppUrl = `https://wa.me/${whatsAppNumber}?text=${whatsAppMessage}`;
+  const [paying, setPaying] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const verifyingPayment = useRef(false);
+
+  const startCheckout = async () => {
+    if (!termsAccepted) {
+      setPaymentError("Please accept the Payment Terms & Conditions before paying.");
+      return;
+    }
+    setPaying(true);
+    setPaymentError("");
+    verifyingPayment.current = false;
+    try {
+      if (!window.Razorpay) {
+        throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
+      }
+      const paise = Math.round(amount * 100);
+      if (paise < 100) {
+        throw new Error("The payment amount must be at least ₹1.");
+      }
+      const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
+        method: "POST",
+        headers: {
+          ...authHeaders(token),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          booking_id: booking.id,
+          amount: paise,
+          currency: "INR",
+          receipt: `booking-${booking.id}`,
+          terms_accepted: true,
+        }),
+      });
+      const order = await orderResponse.json().catch(() => ({}));
+      if (!orderResponse.ok) {
+        throw new Error(
+          formatApiError(order.detail, "Unable to start the Razorpay payment."),
+        );
+      }
+
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Nomad Wanderers",
+        description: `${booking.tour_title} · Booking #${booking.id}`,
+        order_id: order.order_id,
+        handler: async (payment) => {
+          verifyingPayment.current = true;
+          try {
+            const verificationResponse = await fetch(
+              `${apiBaseUrl}/api/verify-payment`,
+              {
+                method: "POST",
+                headers: {
+                  ...authHeaders(token),
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payment),
+              },
+            );
+            const verification = await verificationResponse
+              .json()
+              .catch(() => ({}));
+            if (!verificationResponse.ok || !verification.success) {
+              throw new Error(
+                formatApiError(
+                  verification.detail,
+                  "Payment could not be verified. Please contact us before trying again.",
+                ),
+              );
+            }
+            onPaymentComplete(verification.booking);
+          } catch (error) {
+            setPaymentError(error.message);
+          } finally {
+            setPaying(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            if (!verifyingPayment.current) setPaying(false);
+          },
+        },
+        theme: { color: "#1f6b50" },
+      });
+      checkout.on("payment.failed", (response) => {
+        setPaying(false);
+        setPaymentError(
+          response?.error?.description || "The payment was not completed. Please try again.",
+        );
+      });
+      checkout.open();
+    } catch (error) {
+      setPaymentError(error.message);
+      setPaying(false);
+    }
+  };
+
   return (
     <div
       className="booking-modal-backdrop"
@@ -473,8 +574,8 @@ function PaymentDetailsModal({ booking, siteSettings, onClose }) {
           <span className="eyebrow">Complete your payment</span>
           <h2 id="payment-details-title">Pay for your booking</h2>
           <p>
-            Use the UPI details below for <b>{booking.tour_title}</b>. Your
-            booking remains pending until our team verifies the payment.
+            Pay securely with Razorpay for <b>{booking.tour_title}</b>. We
+            confirm your booking as soon as the payment is verified.
           </p>
         </div>
         <div className="traveller-payment-summary">
@@ -484,31 +585,30 @@ function PaymentDetailsModal({ booking, siteSettings, onClose }) {
             {booking.travellers} traveller{booking.travellers > 1 ? "s" : ""} · {formatDate(booking.travel_date)}
           </small>
         </div>
-        <div className="traveller-payment-upi booking-upi-card">
-          <b>Scan to pay with any UPI app</b>
-          <span>UPI ID: {upiId}</span>
-          <span>UPI number: {upiNumber}</span>
-          <img src={paymentScannerUrl} alt="UPI payment QR code" />
-        </div>
         <div className="traveller-payment-note">
-          <span className="material-symbols-outlined">info</span>
+          <span className="material-symbols-outlined">verified_user</span>
           <p>
-            After payment, share your payment screenshot with our team on
-            WhatsApp at <b>+91 96199 52139</b>. This screenshot is required
-            before your booking can be confirmed.
+            Razorpay opens a secure payment window where you can choose UPI,
+            card, or another available method.
           </p>
         </div>
+        {paymentError && <p className="form-status error">{paymentError}</p>}
         <div className="traveller-payment-actions">
-          <a
+          <PaymentTermsAcceptance
+            accepted={termsAccepted}
+            onChange={setTermsAccepted}
+            disabled={paying}
+          />
+          <button
             className="primary-button"
-            href={whatsAppUrl}
-            target="_blank"
-            rel="noreferrer"
+            type="button"
+            disabled={paying || !termsAccepted}
+            onClick={startCheckout}
           >
-            Share on WhatsApp →
-          </a>
+            {paying ? "Opening secure checkout…" : `Pay ${formatInr(amount)} securely`}
+          </button>
           <button className="outline-button" type="button" onClick={onClose}>
-            Done
+            Cancel
           </button>
         </div>
       </section>

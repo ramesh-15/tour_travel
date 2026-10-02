@@ -6,6 +6,7 @@ import footerCitySkyline from "./assets/footer-city-skyline.png";
 import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
+import { PaymentTermsAcceptance } from "./PaymentTerms";
 import "./App.css";
 
 const images = {
@@ -42,12 +43,6 @@ const fallbackTours = [];
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const businessWhatsAppNumber = "919619952139";
-const businessUpiId = import.meta.env.VITE_UPI_ID || "919619952139@upi";
-const defaultSiteSettings = {
-  upi_id: businessUpiId,
-  upi_number: "+91 96199 52139",
-  upi_qr_image_url: "",
-};
 const MULTI_DAY_TRIP_TYPES = ["Weekly trip", "Multi-day trip"];
 
 function isMultiDayTour(tour) {
@@ -62,7 +57,32 @@ function requiresCustomerAuth(destination) {
   const protectedBooking =
     (url.pathname.startsWith("/tours") || url.pathname.startsWith("/trips/")) &&
     url.searchParams.get("booking") === "1";
-  return protectedIntent || protectedBooking || url.pathname === "/payment";
+  return protectedIntent || protectedBooking;
+}
+
+function isAdminPath(destination) {
+  const pathname = new URL(destination, window.location.origin).pathname;
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}
+
+function isStaffPath(destination) {
+  const pathname = new URL(destination, window.location.origin).pathname;
+  return pathname === "/staff" || pathname.startsWith("/staff/");
+}
+
+function postLoginDestination(role, requestedDestination) {
+  const requested = requestedDestination || "";
+  if (role === "admin") {
+    return isAdminPath(requested) ? requested : "/admin";
+  }
+  if (role === "operations" || role === "support") {
+    return isStaffPath(requested) ? requested : "/staff";
+  }
+  return (
+    (requested === "/account" || requiresCustomerAuth(requested))
+      ? requested
+      : "/account"
+  );
 }
 
 function AuthRequiredModal({ destination, onCancel, onContinue }) {
@@ -200,185 +220,12 @@ function getGoogleMapsEmbedUrl(startLocation, endLocation) {
     : "";
 }
 
-function DummyPayment({ session }) {
-  const query = new URLSearchParams(window.location.search);
-  const [method, setMethod] = useState("upi");
-  const [payment, setPayment] = useState(null);
-  const [status, setStatus] = useState("");
-  const [paying, setPaying] = useState(false);
-  const tour = query.get("tour") || "Tour booking";
-  const name = query.get("name") || "Traveller";
-  const email = query.get("email") || "";
-  const phone = query.get("phone") || "";
-  const bookingId = query.get("booking_id");
-  const amount = 499;
-  const completePayment = async (event) => {
-    event.preventDefault();
-    setPaying(true);
-    setStatus("");
-    try {
-      const endpoint = bookingId
-        ? `/api/bookings/${bookingId}/demo-payment`
-        : "/api/demo-payments";
-      const paymentHeaders = bookingId
-        ? {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.token || ""}`,
-          }
-        : { "Content-Type": "application/json" };
-      const paymentPayload = bookingId
-        ? { payment_method: method }
-        : {
-            name,
-            email,
-            phone,
-            tour_title: tour,
-            amount,
-            payment_method: method,
-          };
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-        method: "POST",
-        headers: paymentHeaders,
-        body: JSON.stringify(paymentPayload),
-      });
-      const body = await response.json();
-      if (!response.ok)
-        throw new Error(
-          formatApiError(body.detail, "Unable to complete the demo payment."),
-        );
-      setPayment(body);
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      setPaying(false);
-    }
-  };
-  if (payment)
-    return (
-      <main className="top-space">
-        <section className="section payment-screen">
-          <div className="payment-confirmation">
-            <span className="material-symbols-outlined">check_circle</span>
-            <Eyebrow>Demo payment successful</Eyebrow>
-            <h1>Your booking request is recorded.</h1>
-            <p>
-              This is a test payment only. No money was transferred and no live
-              messages were sent.
-            </p>
-            <div className="payment-receipt">
-              <div>
-                <span>Tour</span>
-                <b>{payment.payment.tour_title}</b>
-              </div>
-              <div>
-                <span>Demo reference</span>
-                <b>{payment.payment.transaction_reference}</b>
-              </div>
-              <div>
-                <span>Amount</span>
-                <b>₹{Number(payment.payment.amount).toLocaleString("en-IN")}</b>
-              </div>
-              <div>
-                <span>Method</span>
-                <b>{payment.payment.payment_method.replace("_", " ")}</b>
-              </div>
-            </div>
-            <div className="confirmation-previews">
-              <article>
-                <span className="material-symbols-outlined">mail</span>
-                <div>
-                  <b>Email confirmation preview</b>
-                  <p>{payment.email_confirmation}</p>
-                </div>
-              </article>
-              <article>
-                <span className="material-symbols-outlined">chat</span>
-                <div>
-                  <b>WhatsApp template preview</b>
-                  <p>{payment.whatsapp_confirmation}</p>
-                </div>
-              </article>
-            </div>
-            <button
-              className="primary-button"
-              onClick={() => window.location.assign("/")}
-            >
-              Back to home
-            </button>
-          </div>
-        </section>
-      </main>
-    );
-  return (
-    <main className="top-space">
-      <section className="section payment-screen">
-        <div className="payment-intro">
-          <Eyebrow>Demo checkout</Eyebrow>
-          <h1>Complete your test payment</h1>
-          <p>
-            This Razorpay-style screen is a safe simulation for the booking
-            flow. No payment details are processed and no money moves.
-          </p>
-          <div className="payment-order">
-            <span>Booking deposit</span>
-            <b>₹{amount.toLocaleString("en-IN")}</b>
-            <small>{tour}</small>
-          </div>
-        </div>
-        <form className="contact-form payment-form" onSubmit={completePayment}>
-          <div className="payment-form-heading">
-            <span className="material-symbols-outlined">lock</span>
-            <div>
-              <h2>Choose a payment method</h2>
-              <p>Demo mode only</p>
-            </div>
-          </div>
-          <div className="payment-methods">
-            {[
-              ["upi", "UPI"],
-              ["credit_card", "Credit card"],
-              ["debit_card", "Debit card"],
-            ].map(([value, label]) => (
-              <label key={value} className={method === value ? "selected" : ""}>
-                <input
-                  type="radio"
-                  name="method"
-                  value={value}
-                  checked={method === value}
-                  onChange={() => setMethod(value)}
-                />
-                <span className="material-symbols-outlined">
-                  {value === "upi" ? "qr_code_2" : "credit_card"}
-                </span>
-                <b>{label}</b>
-              </label>
-            ))}
-          </div>
-          <div className="payment-demo-note">
-            <span className="material-symbols-outlined">info</span>
-            <p>
-              For this demo, click the button below to simulate a successful
-              payment.
-            </p>
-          </div>
-          <button className="primary-button" type="submit" disabled={paying}>
-            {paying
-              ? "Processing demo payment..."
-              : `Pay ₹${amount.toLocaleString("en-IN")} (Demo)`}
-          </button>
-          {status && <p className="admin-status">{status}</p>}
-        </form>
-      </section>
-    </main>
-  );
-}
-
 function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [query, setQuery] = useState(window.location.search);
   const [tours, setTours] = useState(fallbackTours);
   const [carouselTours, setCarouselTours] = useState([]);
-  const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
+  const [homeReviews, setHomeReviews] = useState([]);
   const [userSession, setUserSession] = useState(() => {
     const token = sessionStorage.getItem("nomad_user_token");
     return token ? { token } : null;
@@ -460,25 +307,32 @@ function App() {
     }
   };
   const authenticateByRole = ({ token, role }) => {
+    const requestedDestination = sessionStorage.getItem("nomad_after_login");
+    const destination = postLoginDestination(role, requestedDestination);
+    sessionStorage.removeItem("nomad_after_login");
+    setPendingAuthDestination("");
+
+    // A browser can contain a stale token for another account type. Keep only
+    // the one session established by the common role-aware sign-in flow.
+    sessionStorage.removeItem("nomad_user_token");
+    sessionStorage.removeItem("nomad_admin_token");
+    sessionStorage.removeItem("nomad_staff_token");
+    setUserSession(null);
+    setAdminSession(null);
+    setStaffSession(null);
+
     if (role === "customer") {
-      const currentDestination = `${path}${query}`;
-      const pendingDestination = sessionStorage.getItem("nomad_after_login");
-      const destination =
-        pendingDestination ||
-        (requiresCustomerAuth(currentDestination) ? currentDestination : "/");
-      sessionStorage.removeItem("nomad_after_login");
-      setPendingAuthDestination("");
       sessionStorage.setItem("nomad_user_token", token);
       setUserSession({ token });
       go(destination, true);
     } else if (role === "admin") {
       sessionStorage.setItem("nomad_admin_token", token);
       setAdminSession({ token });
-      go("/admin");
+      go(destination);
     } else {
       sessionStorage.setItem("nomad_staff_token", token);
       setStaffSession({ token });
-      go("/staff");
+      go(destination);
     }
   };
   useEffect(() => {
@@ -498,32 +352,48 @@ function App() {
       .catch(() => {});
   }, []);
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/site-settings`, { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((settings) =>
-        setSiteSettings({
-          upi_id: settings.upi_id || defaultSiteSettings.upi_id,
-          upi_number: settings.upi_number || defaultSiteSettings.upi_number,
-          upi_qr_image_url: settings.upi_qr_image_url || "",
-        }),
-      )
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
     fetch(`${apiBaseUrl}/api/home-carousel`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((items) => setCarouselTours(items.map(apiTourToUi)))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (path !== "/") return;
+    fetch(`${apiBaseUrl}/api/home-reviews`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((items) => setHomeReviews(items.slice(0, 3)))
+      .catch(() => setHomeReviews([]));
+  }, [path]);
   const loginPage = (
     <UnifiedLogin
       apiBaseUrl={apiBaseUrl}
       onAuthenticated={authenticateByRole}
     />
   );
-  const customerRouteIsProtected = requiresCustomerAuth(`${path}${query}`);
+  const currentDestination = `${path}${query}`;
+  const customerRouteIsProtected = requiresCustomerAuth(currentDestination);
+  const requiredRole = isAdminPath(path)
+    ? "admin"
+    : isStaffPath(path)
+      ? "staff"
+      : path === "/account" || customerRouteIsProtected
+        ? "customer"
+        : "";
+  const sessionHasRequiredRole =
+    (requiredRole === "admin" && Boolean(adminSession)) ||
+    (requiredRole === "staff" && Boolean(staffSession)) ||
+    (requiredRole === "customer" && Boolean(userSession));
+  const requiresLogin = Boolean(requiredRole && !sessionHasRequiredRole);
+  useEffect(() => {
+    if (!requiresLogin || path === "/login") return;
+    sessionStorage.setItem("nomad_after_login", currentDestination);
+    setPendingAuthDestination("");
+    window.history.replaceState({}, "", "/login");
+    setPath("/login");
+    setQuery("");
+  }, [currentDestination, path, requiresLogin]);
   const showingLogin =
-    path === "/login" || (customerRouteIsProtected && !userSession);
+    path === "/login" || requiresLogin;
   const tourSearchTerm = new URLSearchParams(query).get("search") || "";
   const page = showingLogin ? (
     loginPage
@@ -542,8 +412,6 @@ function App() {
     adminSession ? (
       <AdminDashboardV2
         session={adminSession}
-        siteSettings={siteSettings}
-        onSiteSettingsSaved={setSiteSettings}
         onCarouselSaved={(selectedTours) => setCarouselTours(selectedTours.map(apiTourToUi))}
         onSessionExpired={clearAdminSession}
         onManageTeam={() => go("/admin/team")}
@@ -587,7 +455,6 @@ function App() {
       <UserPortal
         apiBaseUrl={apiBaseUrl}
         session={userSession}
-        siteSettings={siteSettings}
         onAuthenticated={(nextSession) => {
           sessionStorage.setItem("nomad_user_token", nextSession.token);
           setUserSession(nextSession);
@@ -618,7 +485,6 @@ function App() {
       go={go}
       tourId={Number(path.split("/").pop())}
       session={userSession}
-      siteSettings={siteSettings}
       initialBooking={new URLSearchParams(query).get("booking") === "1"}
     />
   ) : path === "/tours" ? (
@@ -626,7 +492,6 @@ function App() {
       <TourDetail
         go={go}
         session={userSession}
-        siteSettings={siteSettings}
         initialBooking={new URLSearchParams(query).get("booking") === "1"}
         city={new URLSearchParams(query).get("city") || ""}
         category={new URLSearchParams(query).get("category") || ""}
@@ -642,15 +507,13 @@ function App() {
       />
     )
   ) : path === "/tours/dharavi" ? (
-    <TourDetail go={go} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} />
+    <TourDetail go={go} session={userSession} initialBooking={new URLSearchParams(query).get("booking") === "1"} />
   ) : /^\/tours\/\d+$/.test(path) ? (
-    <TourDetail go={go} session={userSession} siteSettings={siteSettings} initialBooking={new URLSearchParams(query).get("booking") === "1"} tourId={Number(path.split("/").pop())} />
-  ) : path === "/payment" ? (
-    <DummyPayment session={userSession} />
+    <TourDetail go={go} session={userSession} initialBooking={new URLSearchParams(query).get("booking") === "1"} tourId={Number(path.split("/").pop())} />
   ) : path === "/contact" ? (
     <ContactFlowV2 session={userSession} />
   ) : (
-    <Home go={go} carouselTours={carouselTours} />
+    <Home go={go} carouselTours={carouselTours} homeReviews={homeReviews} />
   );
   const closeAuthPrompt = () => {
     sessionStorage.removeItem("nomad_after_login");
@@ -1511,7 +1374,7 @@ function OfferCountdown({ seconds, onClose }) {
   );
 }
 
-function Home({ go, carouselTours = [] }) {
+function Home({ go, carouselTours = [], homeReviews = [] }) {
   const [showRoadTrip, setShowRoadTrip] = useState(false);
   const [showOffer, setShowOffer] = useState(false);
   const [welcomeExpanded, setWelcomeExpanded] = useState(false);
@@ -1706,11 +1569,6 @@ function Home({ go, carouselTours = [] }) {
             image={images.dharavi}
             onClick={() => go("/tours/dharavi")}
           />
-          <TourFeature
-            title="Bicycle Dawn"
-            text="See the city wake up."
-            image={images.bicycle}
-          />
         </div>
       </section>
       <section className="section custom-travel">
@@ -1810,7 +1668,7 @@ function Home({ go, carouselTours = [] }) {
           </button>
         </div>
       </section>
-      <section className="section testimonials">
+      <section className="section testimonials legacy-testimonials">
         <Eyebrow>Traveller stories</Eyebrow>
         <h2>Loved by curious travellers</h2>
         <div className="quote-grid">
@@ -1842,6 +1700,38 @@ function Home({ go, carouselTours = [] }) {
           ))}
         </div>
       </section>
+      {homeReviews.length > 0 && (
+        <section className="section testimonials">
+          <Eyebrow>Traveller stories</Eyebrow>
+          <h2>Loved by curious travellers.</h2>
+          <div className="quote-grid">
+            {homeReviews.slice(0, 3).map((review) => (
+              <blockquote key={review.id}>
+                <span className="home-review-rating" aria-label={`${review.rating} out of 5`}>
+                  {review.rating}/5
+                </span>
+                {review.review_heading && <h3 className="home-review-heading">{review.review_heading}</h3>}
+                <p>{review.review_point}</p>
+                <div className="home-review-scores" aria-label="Review category ratings out of 5">
+                  <span>Guide <b>{review.guide_rating}</b></span>
+                  <span>Meeting or pickup <b>{review.meeting_or_pickup_rating}</b></span>
+                  <span>Value for money <b>{review.value_for_money_rating}</b></span>
+                </div>
+                <footer>
+                  <b>{review.name}</b>
+                  {review.date && <small>{review.date}</small>}
+                  {review.source && <small>Source: {review.source}</small>}
+                  {review.link && (
+                    <a href={review.link} target="_blank" rel="noreferrer">
+                      View on {review.source || "review site"} →
+                    </a>
+                  )}
+                </footer>
+              </blockquote>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -1946,14 +1836,14 @@ function HomeTourCarousel({ go, tours = [] }) {
           onClick={() => changeTour(-1)}
           aria-label="Show previous tour"
         >
-          ←
+          {"<"}
         </button>
         <button
           className="home-carousel-arrow next"
           onClick={() => changeTour(1)}
           aria-label="Show next tour"
         >
-          →
+          {">"}
         </button>
         <div className="home-carousel-pagination">
           {carouselItems.map((item, index) => (
@@ -2595,7 +2485,6 @@ function MultiDayTourDetail({
   go,
   tourId,
   session = null,
-  siteSettings = defaultSiteSettings,
   initialBooking = false,
 }) {
   const [tour, setTour] = useState(null);
@@ -2847,7 +2736,7 @@ function MultiDayTourDetail({
           <button className="primary-button" onClick={openBooking}>{bookingLabel} →</button>
         </aside>
       </section>
-      {bookingOpen && <BookingRequestModal tour={tour} session={session} siteSettings={siteSettings} prices={bookingPrices} onClose={closeBooking} />}
+      {bookingOpen && <BookingRequestModal tour={tour} session={session} prices={bookingPrices} onClose={closeBooking} />}
     </main>
   );
 }
@@ -3924,7 +3813,6 @@ function Admin({ go, onTourCreated, session }) {
 function TourDetail({
   go,
   session = null,
-  siteSettings = defaultSiteSettings,
   initialBooking = false,
   tourId = null,
   city = "Mumbai",
@@ -4013,9 +3901,18 @@ function TourDetail({
   );
   const inclusions = (tour.inclusions || []).filter(Boolean);
   const reviews = (tour.review_items || [])
-    .map((item) => ({
+    .map((item, index) => ({
+      id: item?.id || `${item?.name || item?.author || "review"}-${index}`,
       name: item?.name || item?.author || "",
-      review: item?.review || item?.text || "",
+      rating: Math.min(5, Math.max(1, Number(item?.rating) || 5)),
+      review_heading: item?.review_heading || "",
+      review: item?.review_point || item?.review || item?.text || "",
+      guide_rating: Math.min(5, Math.max(1, Number(item?.guide_rating) || 5)),
+      meeting_or_pickup_rating: Math.min(5, Math.max(1, Number(item?.meeting_or_pickup_rating) || 5)),
+      value_for_money_rating: Math.min(5, Math.max(1, Number(item?.value_for_money_rating) || 5)),
+      date: item?.date || "",
+      source: item?.source || "",
+      link: item?.link || "",
     }))
     .filter((item) => item.name || item.review);
   const faqs = (tour.faq_items || []).filter(
@@ -4145,7 +4042,7 @@ function TourDetail({
           <button className="primary-button" onClick={openBooking}>Book this tour →</button>
         </aside>
       </section>
-      {bookingOpen && <BookingRequestModal tour={tour} session={session} siteSettings={siteSettings} prices={bookingPrices} onClose={closeBooking} />}
+      {bookingOpen && <BookingRequestModal tour={tour} session={session} prices={bookingPrices} onClose={closeBooking} />}
 
       {hasPriceAndInclusions && (
         <section className="section tour-reference-section" id="price-inclusions">
@@ -4253,7 +4150,41 @@ function TourDetail({
         <section className="section tour-reference-section tour-reviews" id="tour-reviews">
           <Eyebrow>Guest experiences</Eyebrow>
           <h2>What travellers say</h2>
-          <div className="tour-reviews-grid">{reviews.map((item, index) => <blockquote key={`${item.name}-${index}`}>{item.review && <>“{item.review}”</>}{item.name && <footer>— {item.name}</footer>}</blockquote>)}</div>
+          <div className="tour-reviews-grid">
+            {reviews.map((item) => (
+              <article className="tour-review-card" key={item.id}>
+                <div className="tour-review-author">
+                  <span className="tour-review-avatar" aria-hidden="true">
+                    {item.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                  </span>
+                  <p>
+                    <strong>{item.name}</strong>
+                    <span>wrote a review{item.date ? ` ${item.date}` : ""}</span>
+                  </p>
+                </div>
+                <span className="tour-review-score" aria-label={`${item.rating} out of 5`}>
+                  {item.rating}<small>/ 5</small>
+                </span>
+                {item.review_heading && <h3 className="tour-review-heading">{item.review_heading}</h3>}
+                <p className="tour-review-copy">{item.review}</p>
+                <div className="tour-review-ratings" aria-label="Review category ratings out of 5">
+                  <div><span>Value for money</span><strong>{item.value_for_money_rating}</strong></div>
+                  <div><span>Guide</span><strong>{item.guide_rating}</strong></div>
+                  <div><span>Meeting or pickup</span><strong>{item.meeting_or_pickup_rating}</strong></div>
+                </div>
+                {(item.source || item.link) && (
+                  <div className="tour-review-meta">
+                    {item.source && <span>Source: {item.source}</span>}
+                    {item.link && (
+                      <a href={item.link} target="_blank" rel="noreferrer">
+                        View on {item.source || "review site"} →
+                      </a>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
         </section>
       )}
       {faqs.length > 0 && (
@@ -4267,7 +4198,7 @@ function TourDetail({
   );
 }
 
-function Dharavi({ go, tours, session = null, siteSettings = defaultSiteSettings, initialBooking = false, tourId = null, city = "Mumbai", category = "Community" }) {
+function Dharavi({ go, tours, session = null, initialBooking = false, tourId = null, city = "Mumbai", category = "Community" }) {
   const [activeTourTab, setActiveTourTab] = useState("tour-info");
   const [bookingOpen, setBookingOpen] = useState(initialBooking && Boolean(session?.token));
   const tour = tourId
@@ -4469,7 +4400,6 @@ function Dharavi({ go, tours, session = null, siteSettings = defaultSiteSettings
           tour={tour}
           title={tourTitle}
           session={session}
-          siteSettings={siteSettings}
           prices={bookingPrices}
           onClose={closeBooking}
         />
@@ -4600,7 +4530,7 @@ function getTourBookingPrice(prices, bookingMode, travellers) {
   );
 }
 
-function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteSettings, prices, onClose }) {
+function BookingRequestModal({ tour, title, session, prices, onClose }) {
   const [bookingMode, setBookingMode] = useState("Shared");
   const [travellers, setTravellers] = useState(2);
   const [travellerDetails, setTravellerDetails] = useState({
@@ -4611,7 +4541,11 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [bookingId, setBookingId] = useState(null);
+  const [createdBooking, setCreatedBooking] = useState(null);
+  const [paying, setPaying] = useState(false);
+  const [paymentComplete, setPaymentComplete] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const paymentVerificationInProgress = useRef(false);
   const generalTimeSlots = useMemo(
     () =>
       [...new Set(
@@ -4648,11 +4582,6 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
   const unitPrice = getTourBookingPrice(prices, bookingMode, travellers);
   const total = unitPrice * travellers;
   const selectedTourTitle = title || tour?.title || "Tour enquiry";
-  const upiId = siteSettings?.upi_id || defaultSiteSettings.upi_id;
-  const upiNumber = siteSettings?.upi_number || defaultSiteSettings.upi_number;
-  const qrData = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=Nomad%20Wanderers&am=${total.toFixed(2)}&cu=INR`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(qrData)}`;
-  const paymentScannerUrl = siteSettings?.upi_qr_image_url || qrCodeUrl;
   const today = new Date().toISOString().slice(0, 10);
   useEffect(() => {
     if (!travellerOptions.includes(travellers)) {
@@ -4719,18 +4648,113 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
           tour_id: tour.id,
           travel_date: values.date,
           travellers,
-          special_requests: `Guest: ${values.name}; Email: ${values.email}; Phone: ${values.phone}\n${requestDetails}`,
+          contact_phone: values.phone,
+          special_requests: `Guest: ${values.name}; Email: ${values.email}\n${requestDetails}`,
         }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(formatApiError(body.detail, "Unable to book this tour."));
-      setBookingId(body.id || null);
+      setCreatedBooking(body);
+      setTermsAccepted(false);
       setSubmitted(true);
     } catch (error) {
       setStatus(error.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+  const startRazorpayCheckout = async () => {
+    if (!createdBooking?.id) return;
+    if (!termsAccepted) {
+      setStatus("Please accept the Payment Terms & Conditions before paying.");
+      return;
+    }
+    setPaying(true);
+    setStatus("");
+    paymentVerificationInProgress.current = false;
+    try {
+      if (!window.Razorpay) {
+        throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
+      }
+      const amountInPaise = Math.round(
+        Number(createdBooking.price || 0) * Number(createdBooking.travellers || 1) * 100,
+      );
+      if (amountInPaise < 100) {
+        throw new Error("The payment amount must be at least ₹1.");
+      }
+      const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.token || ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          booking_id: createdBooking.id,
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: `booking-${createdBooking.id}`,
+          terms_accepted: true,
+        }),
+      });
+      const order = await orderResponse.json().catch(() => ({}));
+      if (!orderResponse.ok) {
+        throw new Error(
+          formatApiError(order.detail, "Unable to start the Razorpay payment."),
+        );
+      }
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Nomad Wanderers",
+        description: `${createdBooking.tour_title} · Booking #${createdBooking.id}`,
+        order_id: order.order_id,
+        handler: async (payment) => {
+          paymentVerificationInProgress.current = true;
+          try {
+            const verificationResponse = await fetch(`${apiBaseUrl}/api/verify-payment`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${session?.token || ""}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payment),
+            });
+            const verification = await verificationResponse.json().catch(() => ({}));
+            if (!verificationResponse.ok || !verification.success) {
+              throw new Error(
+                formatApiError(
+                  verification.detail,
+                  "Payment could not be verified. Please contact us before trying again.",
+                ),
+              );
+            }
+            setCreatedBooking(verification.booking);
+            setPaymentComplete(true);
+          } catch (error) {
+            setStatus(error.message);
+          } finally {
+            setPaying(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            if (!paymentVerificationInProgress.current) setPaying(false);
+          },
+        },
+        theme: { color: "#1f6b50" },
+      });
+      checkout.on("payment.failed", (response) => {
+        setPaying(false);
+        setStatus(
+          response?.error?.description || "The payment was not completed. Please try again.",
+        );
+      });
+      checkout.open();
+    } catch (error) {
+      setStatus(error.message);
+      setPaying(false);
     }
   };
   return (
@@ -4751,15 +4775,35 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
         {submitted ? (
           <div className="booking-modal-success">
             <span className="material-symbols-outlined">check_circle</span>
-            <h3>Booking saved</h3>
-            <p>Your booking{bookingId ? ` #${bookingId}` : ""} has been added. Our team will contact you shortly to confirm availability and payment.</p>
-            <div className="booking-upi-card">
-              <b>UPI payment after confirmation</b>
-              <span>UPI ID: {upiId}</span>
-              <span>UPI number: {upiNumber}</span>
-              <img src={paymentScannerUrl} alt={`UPI QR scanner for ${upiId}`} />
-            </div>
-            <button className="primary-button" type="button" onClick={onClose}>Done</button>
+            <h3>{paymentComplete ? "Payment confirmed" : "Booking saved"}</h3>
+            <p>
+              {paymentComplete
+                ? `Your payment for ${createdBooking?.tour_title || selectedTourTitle} has been verified and your booking is confirmed.`
+                : `Booking #${createdBooking?.id || ""} is ready for secure payment with Razorpay.`}
+            </p>
+            {!paymentComplete && (
+              <>
+                <PaymentTermsAcceptance
+                  accepted={termsAccepted}
+                  onChange={setTermsAccepted}
+                  disabled={paying}
+                />
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={paying || !termsAccepted}
+                  onClick={startRazorpayCheckout}
+                >
+                  {paying
+                    ? "Opening secure checkout…"
+                    : `Pay ${formatInr(Number(createdBooking?.price || 0) * Number(createdBooking?.travellers || 1))} with Razorpay`}
+                </button>
+              </>
+            )}
+            {status && <p className="form-status error">{status}</p>}
+            <button className="outline-button" type="button" onClick={onClose}>
+              {paymentComplete ? "Done" : "Pay later from my bookings"}
+            </button>
           </div>
         ) : (
           <form className="booking-modal-form" onSubmit={submit}>
@@ -4801,13 +4845,7 @@ function BookingRequestModal({ tour, title, session, siteSettings = defaultSiteS
               <div className="booking-price-summary">
                 <span>{formatInr(unitPrice)} × {travellers} {bookingMode.toLowerCase()}</span>
                 <b>{formatInr(total)}</b>
-                <small>Estimated total; final amount is confirmed with availability.</small>
-              </div>
-              <div className="booking-upi-card">
-                <b>Pay by UPI after confirmation</b>
-                <span>UPI ID: {upiId}</span>
-                <span>UPI number: {upiNumber}</span>
-                <img src={paymentScannerUrl} alt={`UPI QR scanner for ${upiId}`} />
+                <small>Pay securely with Razorpay after creating your booking.</small>
               </div>
             </div>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? "Booking tour…" : "Book this tour →"}</button>
@@ -5228,6 +5266,11 @@ function ContactFlowV2({ session }) {
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [tourDetails, setTourDetails] = useState(null);
+  const [createdBooking, setCreatedBooking] = useState(null);
+  const [paying, setPaying] = useState(false);
+  const [paymentComplete, setPaymentComplete] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const paymentVerificationInProgress = useRef(false);
   const query = new URLSearchParams(window.location.search);
   const requestedTour = query.get("tour") || "";
   const intent = query.get("intent") || "contact";
@@ -5312,6 +5355,7 @@ function ContactFlowV2({ session }) {
             tour_id: tourDetails.id,
             travel_date: values.date,
             travellers: Number(values.travellers),
+            contact_phone: values.phone,
             special_requests: specialRequests,
           }),
         });
@@ -5320,7 +5364,9 @@ function ContactFlowV2({ session }) {
           throw new Error(
             formatApiError(booking.detail, "Unable to create your booking."),
           );
-        window.location.assign(`/payment?booking_id=${booking.id}`);
+        setCreatedBooking(booking);
+        setTermsAccepted(false);
+        setSubmitting(false);
       } catch (error) {
         setStatus(error.message);
         setSubmitting(false);
@@ -5368,6 +5414,99 @@ function ContactFlowV2({ session }) {
       setSubmitting(false);
     }
   };
+  const startRazorpayCheckout = async () => {
+    if (!createdBooking?.id) return;
+    if (!termsAccepted) {
+      setStatus("Please accept the Payment Terms & Conditions before paying.");
+      return;
+    }
+    setPaying(true);
+    setStatus("");
+    paymentVerificationInProgress.current = false;
+    try {
+      if (!window.Razorpay) {
+        throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
+      }
+      const amountInPaise = Math.round(
+        Number(createdBooking.price || 0) * Number(createdBooking.travellers || 1) * 100,
+      );
+      if (amountInPaise < 100) {
+        throw new Error("The payment amount must be at least ₹1.");
+      }
+      const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${customerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          booking_id: createdBooking.id,
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: `booking-${createdBooking.id}`,
+          terms_accepted: true,
+        }),
+      });
+      const order = await orderResponse.json().catch(() => ({}));
+      if (!orderResponse.ok) {
+        throw new Error(
+          formatApiError(order.detail, "Unable to start the Razorpay payment."),
+        );
+      }
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Nomad Wanderers",
+        description: `${createdBooking.tour_title} · Booking #${createdBooking.id}`,
+        order_id: order.order_id,
+        handler: async (payment) => {
+          paymentVerificationInProgress.current = true;
+          try {
+            const verificationResponse = await fetch(`${apiBaseUrl}/api/verify-payment`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${customerToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payment),
+            });
+            const verification = await verificationResponse.json().catch(() => ({}));
+            if (!verificationResponse.ok || !verification.success) {
+              throw new Error(
+                formatApiError(
+                  verification.detail,
+                  "Payment could not be verified. Please contact us before trying again.",
+                ),
+              );
+            }
+            setCreatedBooking(verification.booking);
+            setPaymentComplete(true);
+          } catch (error) {
+            setStatus(error.message);
+          } finally {
+            setPaying(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            if (!paymentVerificationInProgress.current) setPaying(false);
+          },
+        },
+        theme: { color: "#1f6b50" },
+      });
+      checkout.on("payment.failed", (response) => {
+        setPaying(false);
+        setStatus(
+          response?.error?.description || "The payment was not completed. Please try again.",
+        );
+      });
+      checkout.open();
+    } catch (error) {
+      setStatus(error.message);
+      setPaying(false);
+    }
+  };
   if (isBooking) {
     return (
       <BookingExperiencePage
@@ -5376,6 +5515,12 @@ function ContactFlowV2({ session }) {
         onSubmit={submit}
         status={status}
         submitting={submitting}
+        booking={createdBooking}
+        paying={paying}
+        paymentComplete={paymentComplete}
+        onPay={startRazorpayCheckout}
+        termsAccepted={termsAccepted}
+        onTermsAcceptedChange={setTermsAccepted}
       />
     );
   }
@@ -5651,7 +5796,19 @@ function ContactFlowV2({ session }) {
   );
 }
 
-function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitting }) {
+function BookingExperiencePage({
+  tour,
+  requestedTour,
+  onSubmit,
+  status,
+  submitting,
+  booking,
+  paying = false,
+  paymentComplete = false,
+  onPay,
+  termsAccepted = false,
+  onTermsAcceptedChange,
+}) {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [travellers, setTravellers] = useState(2);
   const [bookingMode, setBookingMode] = useState("Shared");
@@ -5732,8 +5889,36 @@ function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitti
         </div>
         <aside className="booking-reservation-card">
           <Eyebrow>Reserve your place</Eyebrow>
-          <h2>Book this experience</h2>
-          <p className="booking-card-copy">Choose your preferences. We will confirm the final availability with you.</p>
+          <h2>{booking ? (paymentComplete ? "Payment confirmed" : "Complete payment") : "Book this experience"}</h2>
+          <p className="booking-card-copy">
+            {booking
+              ? paymentComplete
+                ? "Your Razorpay payment was verified and your booking is confirmed."
+                : `Booking #${booking.id} is ready for secure payment.`
+              : "Choose your preferences. We will confirm the final availability with you."}
+          </p>
+          {booking ? (
+            <div className="booking-payment-step">
+              <div className="booking-price-summary">
+                <span>Booking #{booking.id}</span>
+                <b>{formatInr(Number(booking.price || 0) * Number(booking.travellers || 1))}</b>
+                <small>Secure checkout powered by Razorpay.</small>
+              </div>
+              {!paymentComplete && (
+                <>
+                  <PaymentTermsAcceptance
+                    accepted={termsAccepted}
+                    onChange={onTermsAcceptedChange}
+                    disabled={paying}
+                  />
+                  <button className="primary-button" type="button" disabled={paying || !termsAccepted} onClick={onPay}>
+                    {paying ? "Opening secure checkout…" : "Pay with Razorpay"}
+                  </button>
+                </>
+              )}
+              {status && <p className="admin-status">{status}</p>}
+            </div>
+          ) : (
           <form className="journey-form booking-reservation-form" onSubmit={onSubmit}>
             <label>Selected tour<input value={tour?.title || requestedTour || "Tour enquiry"} readOnly /></label>
             <div className="booking-style-picker">
@@ -5757,6 +5942,7 @@ function BookingExperiencePage({ tour, requestedTour, onSubmit, status, submitti
             <button className="primary-button" type="submit" disabled={submitting || !tour}>{submitting ? "Booking tour…" : "Book this tour →"}</button>
             {status && <p className="admin-status">{status}</p>}
           </form>
+          )}
         </aside>
       </section>
     </main>
@@ -5815,8 +6001,6 @@ function BookingTourSummary({ tour, requestedTour }) {
 
 function AdminDashboardV2({
   session,
-  siteSettings = defaultSiteSettings,
-  onSiteSettingsSaved = () => {},
   onCarouselSaved = () => {},
   onSessionExpired,
   onManageTeam,
@@ -5827,26 +6011,20 @@ function AdminDashboardV2({
   const [tours, setTours] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
   const [journeys, setJourneys] = useState([]);
-  const [payments, setPayments] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [homeEnabledReviewCount, setHomeEnabledReviewCount] = useState(0);
   const [report, setReport] = useState(null);
   const [adminProfile, setAdminProfile] = useState(null);
   const [carouselTours, setCarouselTours] = useState([]);
   const [selectedCarouselIds, setSelectedCarouselIds] = useState([]);
   const [savingCarousel, setSavingCarousel] = useState(false);
-  const [settingsForm, setSettingsForm] = useState({
-    upi_id: siteSettings?.upi_id || defaultSiteSettings.upi_id,
-    upi_number: siteSettings?.upi_number || defaultSiteSettings.upi_number,
-    upi_qr_image_url: siteSettings?.upi_qr_image_url || "",
-  });
-  const [paymentScannerFile, setPaymentScannerFile] = useState(null);
-  const [savingSettings, setSavingSettings] = useState(false);
   const [totals, setTotals] = useState({
     tours: 0,
     enquiries: 0,
     journeys: 0,
-    payments: 0,
     bookings: 0,
+    reviews: 0,
     carousel: 0,
     reports: 0,
   });
@@ -5872,13 +6050,12 @@ function AdminDashboardV2({
         "/api/admin/tours",
         "/api/admin/contact-enquiries",
         "/api/admin/custom-journeys",
-        "/api/admin/demo-payments",
       ].map((path) => `${path}?${parameters}`);
       paths.push("/api/staff/bookings");
       paths.push("/api/admin/reports");
       paths.push("/api/admin/me");
-      paths.push("/api/admin/settings");
       paths.push("/api/admin/carousel");
+      paths.push(`/api/admin/reviews?${parameters}`);
       const responses = await Promise.all(
         paths.map((path) => fetch(`${apiBaseUrl}${path}`, { headers })),
       );
@@ -5899,25 +6076,21 @@ function AdminDashboardV2({
       setTours(bodies[0].items);
       setEnquiries(bodies[1].items);
       setJourneys(bodies[2].items);
-      setPayments(bodies[3].items);
-      setBookings(bodies[4]);
-      setReport(bodies[5]);
-      setAdminProfile(bodies[6]);
-      setSettingsForm({
-        upi_id: bodies[7].upi_id || defaultSiteSettings.upi_id,
-        upi_number: bodies[7].upi_number || defaultSiteSettings.upi_number,
-        upi_qr_image_url: bodies[7].upi_qr_image_url || "",
-      });
-      setCarouselTours(bodies[8].tours || []);
-      setSelectedCarouselIds(bodies[8].tour_ids || []);
+      setBookings(bodies[3]);
+      setReport(bodies[4]);
+      setAdminProfile(bodies[5]);
+      setCarouselTours(bodies[6].tours || []);
+      setSelectedCarouselIds(bodies[6].tour_ids || []);
+      setReviews(bodies[7].items || []);
+      setHomeEnabledReviewCount(bodies[7].home_enabled_count || 0);
       setTotals({
         tours: bodies[0].total,
         enquiries: bodies[1].total,
         journeys: bodies[2].total,
-        payments: bodies[3].total,
-        bookings: bodies[4].length,
+        bookings: bodies[3].length,
+        reviews: bodies[7].total,
         reports: 1,
-        carousel: (bodies[8].tour_ids || []).length,
+        carousel: (bodies[6].tour_ids || []).length,
       });
     } catch (error) {
       setStatus(error.message);
@@ -5935,8 +6108,8 @@ function AdminDashboardV2({
     tours,
     enquiries,
     journeys,
-    payments,
     bookings,
+    reviews,
     carousel: carouselTours,
     reports: report ? [report] : [],
   };
@@ -5958,59 +6131,6 @@ function AdminDashboardV2({
     setActiveTab(tab);
     setSearch("");
     setPage(1);
-  };
-  const saveSettings = async (event) => {
-    event.preventDefault();
-    setSavingSettings(true);
-    setStatus("");
-    try {
-      let paymentScannerUrl = settingsForm.upi_qr_image_url || "";
-      if (paymentScannerFile) {
-        const uploadData = new FormData();
-        uploadData.append("image", paymentScannerFile);
-        const uploadResponse = await fetch(`${apiBaseUrl}/api/admin/payment-scanner`, {
-          method: "POST",
-          headers,
-          body: uploadData,
-        });
-        const uploadBody = await uploadResponse.json().catch(() => ({}));
-        if (uploadResponse.status === 401) {
-          onSessionExpired();
-          return;
-        }
-        if (!uploadResponse.ok)
-          throw new Error(
-            formatApiError(uploadBody.detail, "Unable to upload the payment scanner."),
-          );
-        paymentScannerUrl = uploadBody.image_url;
-      }
-      const response = await fetch(`${apiBaseUrl}/api/admin/settings`, {
-        method: "PUT",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          upi_id: settingsForm.upi_id.trim(),
-          upi_number: settingsForm.upi_number.trim(),
-          upi_qr_image_url: paymentScannerUrl,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (response.status === 401) {
-        onSessionExpired();
-        return;
-      }
-      if (!response.ok)
-        throw new Error(
-          formatApiError(body.detail, "Unable to save UPI details."),
-        );
-      setSettingsForm(body);
-      setPaymentScannerFile(null);
-      onSiteSettingsSaved(body);
-      setStatus("UPI details and payment scanner updated successfully.");
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      setSavingSettings(false);
-    }
   };
   const toggleCarouselTour = (tourId) => {
     setSelectedCarouselIds((current) => {
@@ -6139,6 +6259,28 @@ function AdminDashboardV2({
       setStatus(error.message);
     }
   };
+  const toggleReviewHome = async (review, enabled) => {
+    setStatus("");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/reviews/${review.id}/home`, {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const body = await response.json();
+      if (response.status === 401) {
+        onSessionExpired();
+        return;
+      }
+      if (!response.ok)
+        throw new Error(formatApiError(body.detail, "Unable to update the home review."));
+      setReviews((current) => current.map((item) => item.id === body.id ? body : item));
+      setHomeEnabledReviewCount((current) => current + (enabled ? 1 : -1));
+      setStatus(enabled ? "Review added to Traveller stories." : "Review removed from Traveller stories.");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
   if (screen !== "list")
     return (
       <TourEditorV2
@@ -6157,7 +6299,7 @@ function AdminDashboardV2({
     ["bookings", "Bookings", totals.bookings],
     ["enquiries", "Enquiries", totals.enquiries],
     ["journeys", "Custom journeys", totals.journeys],
-    ["payments", "Demo payments", totals.payments],
+    ["reviews", "Reviews", totals.reviews],
     ["reports", "Reports", null],
   ];
   const emptyLabel =
@@ -6166,13 +6308,13 @@ function AdminDashboardV2({
       : activeTab === "bookings"
         ? "bookings"
         : activeTab === "enquiries"
-          ? "contact enquiries"
-          : activeTab === "journeys"
-            ? "custom journeys"
-            : activeTab === "payments"
-              ? "demo payments"
-              : activeTab === "carousel"
-                ? "home carousel tours"
+        ? "contact enquiries"
+        : activeTab === "journeys"
+          ? "custom journeys"
+          : activeTab === "carousel"
+            ? "home carousel tours"
+            : activeTab === "reviews"
+              ? "reviews"
               : "report data";
   return (
     <main className="top-space">
@@ -6209,67 +6351,6 @@ function AdminDashboardV2({
             )}
           </div>
         </div>
-        <section className="admin-settings-card" aria-labelledby="payment-settings-title">
-          <div className="admin-settings-copy">
-            <Eyebrow>Payment settings</Eyebrow>
-            <h2 id="payment-settings-title">UPI details</h2>
-            <p>These details and the uploaded payment scanner appear wherever travellers pay for a booking.</p>
-          </div>
-          <form className="admin-settings-form" onSubmit={saveSettings}>
-            <label>
-              UPI ID
-              <input
-                required
-                value={settingsForm.upi_id}
-                onChange={(event) => setSettingsForm((current) => ({ ...current, upi_id: event.target.value }))}
-                placeholder="yourname@upi"
-              />
-            </label>
-            <label>
-              UPI number
-              <input
-                required
-                value={settingsForm.upi_number}
-                onChange={(event) => setSettingsForm((current) => ({ ...current, upi_number: event.target.value }))}
-                placeholder="+91 96199 52139"
-              />
-            </label>
-            <label className="admin-payment-scanner-field">
-              Payment scanner (UPI QR image)
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(event) => setPaymentScannerFile(event.target.files?.[0] || null)}
-              />
-              <small>Upload a JPEG, PNG, or WebP image up to 5 MB. It will be shown during booking payment.</small>
-            </label>
-            {paymentScannerFile && (
-              <p className="admin-payment-scanner-pending">
-                New scanner selected: <b>{paymentScannerFile.name}</b>. Save UPI details to publish it.
-              </p>
-            )}
-            {settingsForm.upi_qr_image_url && (
-              <div className="admin-payment-scanner-preview">
-                <img src={settingsForm.upi_qr_image_url} alt="Current payment scanner" />
-                <div>
-                  <b>Current payment scanner</b>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentScannerFile(null);
-                      setSettingsForm((current) => ({ ...current, upi_qr_image_url: "" }));
-                    }}
-                  >
-                    Remove scanner (save changes)
-                  </button>
-                </div>
-              </div>
-            )}
-            <button className="primary-button" type="submit" disabled={savingSettings}>
-              {savingSettings ? "Saving…" : "Save UPI details →"}
-            </button>
-          </form>
-        </section>
         <div className="admin-tabs">
           {tabs.map(([id, label, count]) => (
             <button
@@ -6353,6 +6434,12 @@ function AdminDashboardV2({
                   </>
                 ) : activeTab === "reports" ? (
                   <AdminReportPanel report={report} />
+                ) : activeTab === "reviews" ? (
+                  <AdminReviewTable
+                    reviews={pageRecords}
+                    homeEnabledCount={homeEnabledReviewCount}
+                    onToggleHome={toggleReviewHome}
+                  />
                 ) : activeTab === "bookings" ? (
                   <AdminBookingList
                     bookings={pageRecords}
@@ -6372,9 +6459,7 @@ function AdminDashboardV2({
                     headers={headers}
                     onChanged={setJourneys}
                   />
-                ) : (
-                  <AdminPaymentList payments={pageRecords} />
-                )
+                ) : null
               ) : (
                 <div className="admin-empty">
                   <h2>No {emptyLabel} found</h2>
@@ -6399,6 +6484,73 @@ function AdminDashboardV2({
         )}
       </section>
     </main>
+  );
+}
+
+function AdminReviewTable({ reviews = [], homeEnabledCount = 0, onToggleHome }) {
+  return (
+    <section className="admin-carousel-panel">
+      <div className="admin-carousel-heading">
+        <div>
+          <Eyebrow>Traveller stories</Eyebrow>
+          <h2>Manage reviews</h2>
+          <p>Select up to three reviews to show under “Loved by curious travellers.” on the home page.</p>
+        </div>
+        <div className="admin-carousel-count">{homeEnabledCount} of 3 shown on the home page</div>
+      </div>
+      <div className="admin-carousel-table-wrap">
+        <table className="admin-carousel-table admin-reviews-table">
+          <thead>
+            <tr>
+              <th scope="col">ID</th>
+              <th scope="col">Name</th>
+              <th scope="col">Tour name</th>
+              <th scope="col">Review heading</th>
+              <th scope="col">Review point</th>
+              <th scope="col">Date</th>
+              <th scope="col">Source</th>
+              <th scope="col">Link</th>
+              <th scope="col">Rating (1–5)</th>
+              <th scope="col">Guide (1–5)</th>
+              <th scope="col">Meeting / pickup (1–5)</th>
+              <th scope="col">Value for money (1–5)</th>
+              <th scope="col">Home</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reviews.map((review) => (
+              <tr key={review.id} className={review.show_on_home ? "selected" : ""}>
+                <td>{review.id}</td>
+                <td>{review.name}</td>
+                <td>{review.tour_name}</td>
+                <td>{review.review_heading || "—"}</td>
+                <td className="admin-review-point-cell">{review.review_point}</td>
+                <td>{review.date || "—"}</td>
+                <td>{review.source || "—"}</td>
+                <td>
+                  {review.link ? (
+                    <a href={review.link} target="_blank" rel="noreferrer">Open link →</a>
+                  ) : "—"}
+                </td>
+                <td>{review.rating}</td>
+                <td>{review.guide_rating}</td>
+                <td>{review.meeting_or_pickup_rating}</td>
+                <td>{review.value_for_money_rating}</td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(review.show_on_home)}
+                    disabled={!review.show_on_home && homeEnabledCount >= 3}
+                    onChange={(event) => onToggleHome(review, event.target.checked)}
+                    aria-label={`${review.show_on_home ? "Remove" : "Show"} review ${review.id} on the home page`}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -6503,10 +6655,6 @@ function AdminReportPanel({ report }) {
         <p>Please try again in a moment.</p>
       </div>
     );
-  const paymentTotal = Number(report.demo_payment_total || 0).toLocaleString(
-    "en-IN",
-    { maximumFractionDigits: 0 },
-  );
   return (
     <section className="admin-report-panel">
       <div className="admin-report-heading">
@@ -6514,8 +6662,7 @@ function AdminReportPanel({ report }) {
           <span className="eyebrow">Business overview</span>
           <h2>Travel operations at a glance</h2>
           <p>
-            Live counts from customer accounts, bookings, confirmations, and
-            demo payment records.
+            Live counts from customer accounts, bookings, and confirmations.
           </p>
         </div>
         <span className="material-symbols-outlined">insights</span>
@@ -6541,15 +6688,11 @@ function AdminReportPanel({ report }) {
         </article>
         <article>
           <span className="material-symbols-outlined">payments</span>
-          <small>Demo payments</small>
-          <b>₹{paymentTotal}</b>
-          <p>Recorded payment value</p>
+          <small>Razorpay payments</small>
+          <b>{report.razorpay_payments}</b>
+          <p>Verified checkout payments</p>
         </article>
       </div>
-      <p className="admin-report-note">
-        <span className="material-symbols-outlined">info</span>Payment data is
-        marked as demo until a live payment provider is connected.
-      </p>
     </section>
   );
 }
@@ -6687,10 +6830,35 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     })),
     review_items: (tour?.review_items?.length
       ? tour.review_items
-      : [{ name: "", review: "" }]
+      : [{
+          name: "",
+          rating: 5,
+          review_heading: "",
+          review_point: "",
+          guide_rating: 5,
+          meeting_or_pickup_rating: 5,
+          value_for_money_rating: 5,
+          date: "",
+          source: "",
+          link: "",
+        }]
     ).map((item) => ({
+      id: item?.id,
       name: item?.name || item?.author || "",
-      review: item?.review || item?.text || "",
+      rating: item?.rating || 5,
+      review_heading: item?.review_heading || "",
+      review_point: item?.review_point || item?.review || item?.text || "",
+      guide_rating: item?.guide_rating || 5,
+      meeting_or_pickup_rating: item?.meeting_or_pickup_rating || 5,
+      value_for_money_rating: item?.value_for_money_rating || 5,
+      date: item?.date || "",
+      source: ["tripadvisor", "google"].includes((item?.source || "").trim().toLowerCase())
+        ? (item.source.trim().toLowerCase() === "tripadvisor" ? "Tripadvisor" : "Google")
+        : item?.source ? "Other" : "",
+      source_custom: ["tripadvisor", "google"].includes((item?.source || "").trim().toLowerCase())
+        ? ""
+        : item?.source || "",
+      link: item?.link || "",
     })),
     tag: tour?.tag || "",
     featured: tour?.featured || false,
@@ -6803,6 +6971,16 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       ),
     }));
   };
+  const updateReviewSource = (index, value) => {
+    setForm((current) => ({
+      ...current,
+      review_items: current.review_items.map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...item, source: value, source_custom: value === "Other" ? item.source_custom : "" }
+          : item,
+      ),
+    }));
+  };
   const addFaq = () => {
     setForm((current) => ({
       ...current,
@@ -6812,7 +6990,19 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
   const addReview = () => {
     setForm((current) => ({
       ...current,
-      review_items: [...current.review_items, { name: "", review: "" }],
+      review_items: [...current.review_items, {
+        name: "",
+        rating: 5,
+        review_heading: "",
+        review_point: "",
+        guide_rating: 5,
+        meeting_or_pickup_rating: 5,
+        value_for_money_rating: 5,
+        date: "",
+        source: "",
+        source_custom: "",
+        link: "",
+      }],
     }));
   };
   const removeFaq = (index) => {
@@ -6882,9 +7072,30 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       answer: item.answer.trim(),
     }));
     const reviewItems = form.review_items.map((item) => ({
+      id: item.id,
       name: item.name.trim(),
-      review: item.review.trim(),
+      rating: Number(item.rating) || 5,
+      review_heading: item.review_heading.trim(),
+      review_point: item.review_point.trim(),
+      guide_rating: Number(item.guide_rating) || 5,
+      meeting_or_pickup_rating: Number(item.meeting_or_pickup_rating) || 5,
+      value_for_money_rating: Number(item.value_for_money_rating) || 5,
+      date: item.date.trim() || null,
+      source: (item.source === "Other" ? item.source_custom : item.source).trim(),
+      link: item.link.trim() || null,
     }));
+    const invalidReviewRatingIndex = reviewItems.findIndex((item) =>
+      [
+        item.rating,
+        item.guide_rating,
+        item.meeting_or_pickup_rating,
+        item.value_for_money_rating,
+      ].some((rating) => !Number.isInteger(rating) || rating < 1 || rating > 5),
+    );
+    if (invalidReviewRatingIndex >= 0) {
+      setStatus(`Review ${invalidReviewRatingIndex + 1}: ratings must be whole numbers from 1 to 5.`);
+      return;
+    }
     const incompleteFaqIndex = faqItems.findIndex(
       (item) => Boolean(item.question) !== Boolean(item.answer),
     );
@@ -6893,7 +7104,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       return;
     }
     const incompleteReviewIndex = reviewItems.findIndex(
-      (item) => Boolean(item.name) !== Boolean(item.review),
+      (item) => Boolean(item.name) !== Boolean(item.review_point),
     );
     if (incompleteReviewIndex >= 0) {
       setStatus(`Review ${incompleteReviewIndex + 1}: complete both the traveller name and review.`);
@@ -6940,7 +7151,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         private_tiers: privatePricingTiers,
       },
       faq_items: faqItems.filter((item) => item.question && item.answer),
-      review_items: reviewItems.filter((item) => item.name && item.review),
+      review_items: reviewItems.filter((item) => item.name && item.review_point),
     };
     try {
       if (imageFile) {
@@ -7505,31 +7716,126 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           </fieldset>
           <fieldset className="admin-repeat-section">
             <legend>Reviews</legend>
-            <small>Add the traveller name on the left and their review on the right.</small>
+            <small>Add reviews for this tour. Choose up to three from the Reviews dashboard for the home page.</small>
             <div className="admin-faq-review-list">
               {form.review_items.map((review, index) => (
-                <div className="admin-faq-review-row" key={index}>
+                <div className="admin-review-edit-row" key={review.id || index}>
                   <label>
                     Traveller name
                     <input
                       value={review.name}
                       onChange={(event) => updateReview(index, "name", event.target.value)}
-                      placeholder="Aisha, Mumbai"
                     />
                   </label>
                   <label>
-                    Review
+                    Rating (1–5)
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="1"
+                      required
+                      value={review.rating}
+                      onChange={(event) => updateReview(index, "rating", event.target.value === "" ? "" : Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Review heading
+                    <input
+                      maxLength="180"
+                      value={review.review_heading}
+                      onChange={(event) => updateReview(index, "review_heading", event.target.value)}
+                      placeholder="A short review title"
+                    />
+                  </label>
+                  <label>
+                    Date
+                    <input
+                      value={review.date}
+                      onChange={(event) => updateReview(index, "date", event.target.value)}
+                      placeholder="Month and year or full date"
+                    />
+                  </label>
+                  <label>
+                    Source
+                    <select
+                      value={review.source}
+                      onChange={(event) => updateReviewSource(index, event.target.value)}
+                    >
+                      <option value="">Select a source</option>
+                      <option value="Tripadvisor">Tripadvisor</option>
+                      <option value="Google">Google</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </label>
+                  {review.source === "Other" && (
+                    <label>
+                      Custom source
+                      <input
+                        maxLength="100"
+                        required={Boolean(review.name || review.review_point)}
+                        value={review.source_custom}
+                        onChange={(event) => updateReview(index, "source_custom", event.target.value)}
+                        placeholder="Enter another review source"
+                      />
+                    </label>
+                  )}
+                  <label>
+                    Guide rating (1–5)
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="1"
+                      required
+                      value={review.guide_rating}
+                      onChange={(event) => updateReview(index, "guide_rating", event.target.value === "" ? "" : Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Meeting or pickup rating (1–5)
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="1"
+                      required
+                      value={review.meeting_or_pickup_rating}
+                      onChange={(event) => updateReview(index, "meeting_or_pickup_rating", event.target.value === "" ? "" : Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Value for money rating (1–5)
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="1"
+                      required
+                      value={review.value_for_money_rating}
+                      onChange={(event) => updateReview(index, "value_for_money_rating", event.target.value === "" ? "" : Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Source link
+                    <input
+                      type="url"
+                      value={review.link}
+                      onChange={(event) => updateReview(index, "link", event.target.value)}
+                      placeholder="https://"
+                    />
+                  </label>
+                  <label className="admin-review-point-field">
+                    Review point
                     <textarea
                       rows="3"
-                      value={review.review}
-                      onChange={(event) => updateReview(index, "review", event.target.value)}
-                      placeholder="Share the traveller's experience."
+                      value={review.review_point}
+                      onChange={(event) => updateReview(index, "review_point", event.target.value)}
                     />
                   </label>
                   <button
                     type="button"
                     className="repeat-remove"
-                    disabled={form.review_items.length === 1}
                     onClick={() => removeReview(index)}
                     aria-label={`Remove review ${index + 1}`}
                   >
@@ -7540,7 +7846,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             </div>
             <button type="button" className="repeat-add" onClick={addReview}>
               <span className="material-symbols-outlined">add</span>
-              Add review
+              Add a review
             </button>
           </fieldset>
           <label>
@@ -8048,7 +8354,6 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
   const [tours, setTours] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
   const [journeys, setJourneys] = useState([]);
-  const [payments, setPayments] = useState([]);
   const [screen, setScreen] = useState("list");
   const [selectedTour, setSelectedTour] = useState(null);
   const [status, setStatus] = useState("");
@@ -8063,7 +8368,6 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
           "/api/admin/tours",
           "/api/admin/contact-enquiries",
           "/api/admin/custom-journeys",
-          "/api/admin/demo-payments",
         ].map((path) => fetch(`${apiBaseUrl}${path}`, { headers })),
       );
       const bodies = await Promise.all(
@@ -8079,7 +8383,6 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
       setTours(bodies[0]);
       setEnquiries(bodies[1]);
       setJourneys(bodies[2]);
-      setPayments(bodies[3]);
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -8129,7 +8432,6 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
     ["tours", "Tours", tours.length],
     ["enquiries", "Enquiries", enquiries.length],
     ["journeys", "Custom journeys", journeys.length],
-    ["payments", "Demo payments", payments.length],
   ];
   return (
     <main className="top-space">
@@ -8230,9 +8532,7 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
             headers={headers}
             onChanged={setJourneys}
           />
-        ) : (
-          <AdminPaymentList payments={payments} />
-        )}
+        ) : null}
       </section>
     </main>
   );
@@ -8275,61 +8575,11 @@ function AdminBookingList({ bookings, onUpdate }) {
               Complete
             </button>
             <button
-              onClick={() => onUpdate(booking, { payment_status: "paid" })}
-            >
-              Mark paid
-            </button>
-            <button
               className="delete-button"
               onClick={() => onUpdate(booking, { booking_status: "cancelled" })}
             >
               Cancel
             </button>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function AdminPaymentList({ payments }) {
-  return payments.length === 0 ? (
-    <div className="admin-empty">
-      <h2>No demo payments yet</h2>
-      <p>Completed dummy checkout payments will appear here for review.</p>
-    </div>
-  ) : (
-    <div className="admin-request-list">
-      {payments.map((payment) => (
-        <article className="admin-request-card" key={payment.id}>
-          <div className="request-summary">
-            <div>
-              <span className="request-type">
-                Demo payment · {payment.status}
-              </span>
-              <h2>{payment.tour_title}</h2>
-              <a href={`mailto:${payment.email}`}>
-                {payment.name} · {payment.email}
-              </a>
-              <a href={`tel:${payment.phone}`}>{payment.phone}</a>
-            </div>
-            <small>
-              {new Date(payment.created_at).toLocaleDateString("en-IN", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              })}
-            </small>
-          </div>
-          <div className="request-details">
-            <p>
-              <b>Amount:</b> ₹{Number(payment.amount).toLocaleString("en-IN")} ·{" "}
-              <b>Method:</b> {payment.payment_method.replace("_", " ")}
-            </p>
-            <p>
-              <b>Reference:</b> {payment.transaction_reference}
-            </p>
-            <p>This is a simulated payment record. No money was collected.</p>
           </div>
         </article>
       ))}
