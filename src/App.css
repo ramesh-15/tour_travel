@@ -6121,7 +6121,8 @@ textarea:focus-visible {
 .tour-card .tour-body > p,
 .tour-card .highlight-list { display: none; }
 .tour-card .tour-details { margin-top: 14px; gap: 12px; }
-.tours-page .tour-details { margin-top: auto; margin-bottom: 16px; }
+.tours-page .tour-details { margin-top: auto; margin-bottom: 28px; }
+.tours-page .tour-body > button { margin-top: 0; }
 .tour-card .tour-details strong { order: 1; }
 .tour-card .tour-details > span {
   display: inline-flex;
