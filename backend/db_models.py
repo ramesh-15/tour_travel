@@ -18,7 +18,7 @@ from mysql.connector.connection import MySQLConnection
 DB_ENV_PATH = Path(__file__).with_name("db.env")
 TOUR_COLUMNS = (
     "title", "description", "image_url", "city", "mode", "trip_type", "category", "duration",
-    "price", "capacity", "schedule_type", "departure_date", "start_time", "time_slots", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "start_meeting_point", "start_meeting_map_url", "end_meeting_point", "end_meeting_map_url", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
+    "price", "capacity", "schedule_type", "departure_date", "start_time", "time_slots", "guide_name", "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "meeting_details", "start_meeting_point", "start_meeting_map_url", "end_meeting_point", "end_meeting_map_url", "meeting_locations", "traveller_video_url", "private_price", "tag", "featured", "dark", "published",
     "categories", "start_city", "end_city", "destinations", "duration_days", "duration_nights",
     "languages", "physicality", "itinerary", "inclusion_groups", "exclusions", "pricing", "availability",
 )
@@ -170,6 +170,7 @@ def initialize_database() -> None:
             start_meeting_map_url VARCHAR(2048) NULL,
             end_meeting_point VARCHAR(300) NOT NULL DEFAULT '',
             end_meeting_map_url VARCHAR(2048) NULL,
+            meeting_locations JSON NOT NULL,
             traveller_video_url VARCHAR(2048) NULL,
             private_price DECIMAL(12, 2) NULL,
             categories JSON NOT NULL,
@@ -358,6 +359,7 @@ def initialize_database() -> None:
             ("tours", "start_meeting_map_url", "VARCHAR(2048) NULL"),
             ("tours", "end_meeting_point", "VARCHAR(300) NOT NULL DEFAULT ''"),
             ("tours", "end_meeting_map_url", "VARCHAR(2048) NULL"),
+            ("tours", "meeting_locations", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
             ("tours", "traveller_video_url", "VARCHAR(2048) NULL"),
             ("tours", "private_price", "DECIMAL(12, 2) NULL"),
             ("tours", "categories", "JSON NOT NULL DEFAULT (JSON_ARRAY())"),
@@ -580,7 +582,7 @@ def _attach_tour_reviews(connection: MySQLConnection, rows: list[dict[str, Any]]
 def row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     tour = dict(row)
     for field in (
-        "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "time_slots",
+        "highlights", "inclusions", "gallery_images", "faq_items", "review_items", "time_slots", "meeting_locations",
         "categories", "destinations", "languages", "itinerary", "inclusion_groups", "exclusions",
         "pricing", "availability",
     ):
@@ -693,7 +695,7 @@ def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any
     defaults: dict[str, Any] = {
         "inclusions": [], "gallery_images": [], "faq_items": [], "review_items": [], "time_slots": [],
         "meeting_details": "", "start_meeting_point": "", "start_meeting_map_url": None,
-        "end_meeting_point": "", "end_meeting_map_url": None,
+        "end_meeting_point": "", "end_meeting_map_url": None, "meeting_locations": [],
         "traveller_video_url": None, "private_price": None,
         "categories": [], "start_city": None, "end_city": None, "destinations": [],
         "duration_days": None, "duration_nights": None, "languages": [], "physicality": None,
@@ -702,7 +704,7 @@ def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any
     }
     values = {field: data.get(field, defaults.get(field)) for field in TOUR_COLUMNS}
     for field in (
-        "highlights", "inclusions", "gallery_images", "faq_items", "time_slots",
+        "highlights", "inclusions", "gallery_images", "faq_items", "time_slots", "meeting_locations",
         "categories", "destinations", "languages", "itinerary", "inclusion_groups", "exclusions",
         "pricing", "availability",
     ):

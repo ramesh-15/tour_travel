@@ -162,6 +162,13 @@ class TourAvailability(BaseModel):
     customizable: bool = False
 
 
+class TourMeetingLocation(BaseModel):
+    start_meeting_point: str = Field(default="", max_length=300)
+    start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+    end_meeting_point: str = Field(default="", max_length=300)
+    end_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+
+
 class TourInput(BaseModel):
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=10, max_length=2000)
@@ -188,6 +195,7 @@ class TourInput(BaseModel):
     start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
     end_meeting_point: str = Field(default="", max_length=300)
     end_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+    meeting_locations: list[TourMeetingLocation] = Field(default_factory=list, max_length=10)
     traveller_video_url: str | None = Field(default=None, max_length=2048)
     private_price: float | None = Field(default=None, gt=0, le=10_000_000)
     categories: list[str] = Field(default_factory=list, max_length=12)

@@ -3,6 +3,7 @@ import delhiIndiaGate from "./assets/delhi-india-gate.png";
 import roadTripCar from "./assets/road-trip-car.png";
 import rajasthanCamelTour from "./assets/rajasthan-desert-camel-tour.png";
 import footerCitySkyline from "./assets/footer-city-skyline.png";
+import founderPortrait from "./assets/founder-portrait.png";
 import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
@@ -824,9 +825,9 @@ function Header({
               <span className="material-symbols-outlined" aria-hidden="true">call</span>
               +91 96199 52139
             </a>
-            <a href="mailto:hello@nomadwanderers.in">
+            <a href="mailto:wanderersnomad@gmail.com">
               <span className="material-symbols-outlined" aria-hidden="true">mail</span>
-              hello@nomadwanderers.in
+              wanderersnomad@gmail.com
             </a>
             <span className="contact-bar-item">
               <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
@@ -1015,7 +1016,7 @@ function Header({
           <a href="tel:+919619952139" aria-label="Call Nomad Wanderers">
             <span className="material-symbols-outlined" aria-hidden="true">call</span>
           </a>
-          <a href="mailto:hello@nomadwanderers.in" aria-label="Email Nomad Wanderers">
+          <a href="mailto:wanderersnomad@gmail.com" aria-label="Email Nomad Wanderers">
             <span className="material-symbols-outlined" aria-hidden="true">mail</span>
           </a>
         </div>
@@ -1233,7 +1234,7 @@ function About({ go }) {
       </Hero>
       <section className="section about-intro">
         <div className="about-photo">
-          <img src={images.raj} alt="Raj, founder of Nomad Wanderers" />
+          <img className="founder-portrait" src={founderPortrait} alt="Raj, founder of Nomad Wanderers" />
         </div>
         <div className="about-copy">
           <Eyebrow>Founded in Mumbai</Eyebrow>
@@ -1283,48 +1284,6 @@ function About({ go }) {
               <p>{text}</p>
             </article>
           ))}
-        </div>
-      </section>
-      <section className="section about-process">
-        <div>
-          <Eyebrow>How we work</Eyebrow>
-          <h2>
-            Carefully planned.
-            <br />
-            <em>Beautifully unplanned.</em>
-          </h2>
-        </div>
-        <div className="about-process-list">
-          <article>
-            <b>01</b>
-            <div>
-              <h3>Start with you</h3>
-              <p>
-                We ask about your interests, energy, timing, and the kind of
-                India you hope to find.
-              </p>
-            </div>
-          </article>
-          <article>
-            <b>02</b>
-            <div>
-              <h3>Pair you with the right local voice</h3>
-              <p>
-                Your host brings lived knowledge, context, and the confidence to
-                take a side street when it is worth it.
-              </p>
-            </div>
-          </article>
-          <article>
-            <b>03</b>
-            <div>
-              <h3>Leave space for discovery</h3>
-              <p>
-                The best moments are rarely scheduled. We build in room for a
-                market stall, a conversation, or a view worth lingering over.
-              </p>
-            </div>
-          </article>
         </div>
       </section>
       <section className="about-quote">
@@ -1525,14 +1484,14 @@ function Home({ go, carouselTours = [], homeReviews = [] }) {
           </button>
         </div>
         <div className="city-pair">
-          <button className="city-card" onClick={() => go("/tours")}>
+          <button className="city-card" onClick={() => go("/tours?city=Mumbai")}>
             <img src={images.city} alt="Mumbai skyline" />
             <span>
               <b>Mumbai</b>
               <small>Markets, neighbourhoods, food & community</small>
             </span>
           </button>
-          <button className="city-card" onClick={() => go("/tours")}>
+          <button className="city-card" onClick={() => go("/tours?city=Delhi")}>
             <img src={images.delhi} alt="Delhi architecture" />
             <span>
               <b>Delhi</b>
@@ -1621,7 +1580,7 @@ function Home({ go, carouselTours = [], homeReviews = [] }) {
       </section>
       <section className="section story" id="story">
         <div className="story-photo">
-          <img src={images.raj} alt="Raj, your local guide" />
+          <img className="founder-portrait" src={founderPortrait} alt="Raj, your local guide" />
         </div>
         <div className="story-copy">
           <Eyebrow>The Heart of Nomad Wanderers</Eyebrow>
@@ -1705,30 +1664,59 @@ function Home({ go, carouselTours = [], homeReviews = [] }) {
           <Eyebrow>Traveller stories</Eyebrow>
           <h2>Loved by curious travellers.</h2>
           <div className="quote-grid">
-            {homeReviews.slice(0, 3).map((review) => (
-              <blockquote key={review.id}>
-                <span className="home-review-rating" aria-label={`${review.rating} out of 5`}>
-                  {review.rating}/5
-                </span>
-                {review.review_heading && <h3 className="home-review-heading">{review.review_heading}</h3>}
-                <p>{review.review_point}</p>
-                <div className="home-review-scores" aria-label="Review category ratings out of 5">
-                  <span>Guide <b>{review.guide_rating}</b></span>
-                  <span>Meeting or pickup <b>{review.meeting_or_pickup_rating}</b></span>
-                  <span>Value for money <b>{review.value_for_money_rating}</b></span>
-                </div>
-                <footer>
-                  <b>{review.name}</b>
-                  {review.date && <small>{review.date}</small>}
-                  {review.source && <small>Source: {review.source}</small>}
+            {homeReviews.slice(0, 3).map((review) => {
+              const rating = Math.max(0, Math.min(5, Number(review.rating) || 0));
+              const initials = (review.name || "Guest")
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((name) => name[0])
+                .join("")
+                .toUpperCase();
+
+              return (
+                <blockquote className="home-review-card" key={review.id}>
+                  <div className="home-review-topline">
+                    <span className="home-review-avatar" aria-hidden="true">{initials}</span>
+                    <span className="home-review-rating" aria-label={`${rating.toFixed(1)} out of 5`}>
+                      <span className="home-review-rating-dots" aria-hidden="true">
+                        {Array.from({ length: 5 }, (_, index) => (
+                          <i className={index < Math.round(rating) ? "is-filled" : ""} key={index} />
+                        ))}
+                      </span>
+                      <b>{rating.toFixed(1)}</b>
+                    </span>
+                  </div>
+                  {review.review_heading && <h3 className="home-review-heading">{review.review_heading}</h3>}
+                  <p className={`home-review-copy${review.link ? "" : " home-review-copy-full"}`}>{review.review_point}</p>
                   {review.link && (
-                    <a href={review.link} target="_blank" rel="noreferrer">
-                      View on {review.source || "review site"} →
+                    <a className="home-review-read-more" href={review.link} target="_blank" rel="noreferrer">
+                      Read more
                     </a>
                   )}
-                </footer>
-              </blockquote>
-            ))}
+                  <div className="home-review-scores" aria-label="Review category ratings out of 5">
+                    <span>Guide <b>{review.guide_rating}</b></span>
+                    <span>Meeting or pickup <b>{review.meeting_or_pickup_rating}</b></span>
+                    <span>Value for money <b>{review.value_for_money_rating}</b></span>
+                  </div>
+                  <footer className="home-review-footer">
+                    <span className="home-review-author">
+                      <span className="home-review-avatar home-review-avatar-small" aria-hidden="true">{initials}</span>
+                      <span className="home-review-byline">
+                        <b>{review.name}</b>
+                        {review.date && <small>{review.date}</small>}
+                      </span>
+                    </span>
+                    {review.link && (
+                      <a className="home-review-source" href={review.link} target="_blank" rel="noreferrer">
+                        {review.source || "Review site"} <span aria-hidden="true">↗</span>
+                      </a>
+                    )}
+                    {!review.link && review.source && <span className="home-review-source">{review.source}</span>}
+                  </footer>
+                </blockquote>
+              );
+            })}
           </div>
         </section>
       )}
@@ -1836,14 +1824,18 @@ function HomeTourCarousel({ go, tours = [] }) {
           onClick={() => changeTour(-1)}
           aria-label="Show previous tour"
         >
-          {"<"}
+          <span className="material-symbols-outlined" aria-hidden="true">
+            chevron_left
+          </span>
         </button>
         <button
           className="home-carousel-arrow next"
           onClick={() => changeTour(1)}
           aria-label="Show next tour"
         >
-          {">"}
+          <span className="material-symbols-outlined" aria-hidden="true">
+            chevron_right
+          </span>
         </button>
         <div className="home-carousel-pagination">
           {carouselItems.map((item, index) => (
@@ -2161,6 +2153,40 @@ function ToursV3({
         : category
           ? `${category} Tours`
           : "Curated Experiences";
+  const cityTourContent = {
+    Mumbai: {
+      image: images.mumbai,
+      imageAlt: "Visitors exploring Mumbai near the Gateway of India",
+      title: "Mumbai City Tours",
+      subtitle: "Discover the real Mumbai",
+      heading: "Why choose our Mumbai City Tours",
+      description: [
+        "Nomad Wanderers is rooted in Mumbai and creates locally led city tours that move beyond the usual checklist. Explore landmark views, historic lanes, markets and neighbourhood stories with hosts who know how the city moves.",
+        "Our small-group and private experiences are thoughtfully paced around your interests, leaving time for local food, honest conversation and the everyday places most visitors pass by.",
+      ],
+    },
+    Delhi: {
+      image: images.delhi,
+      imageAlt: "India Gate in Delhi",
+      title: "Delhi City Tours",
+      subtitle: "Discover the stories of Delhi",
+      heading: "Why choose our Delhi City Tours",
+      description: [
+        "Delhi is a city of layered history, living traditions and unforgettable contrasts. Explore old lanes, grand monuments, food markets and local neighbourhoods with a guide who brings each place into focus.",
+        "Our small-group and private experiences connect the capital's famous sights with the people, flavours and stories that make Delhi feel personal rather than hurried.",
+      ],
+    },
+  };
+  const cityIntro = city
+    ? cityTourContent[city] || {
+      image: images[city.toLowerCase()] || images.heritage,
+      imageAlt: `${city} cityscape`,
+      title: `${city} City Tours`,
+      subtitle: `Discover ${city}`,
+      heading: `Discover ${city}`,
+      description: [`Join locally led experiences that reveal the history, culture, food and everyday stories of ${city}.`],
+    }
+    : null;
   const categoryLead =
     category === "Unique"
       ? "Discover thoughtful, locally led experiences built around the people, places, and stories visitors often miss."
@@ -2226,13 +2252,23 @@ function ToursV3({
   };
   return (
     <main className="top-space">
-      {city && (
+      {cityIntro && (
         <section className="city-tour-intro">
-          <div className="city-tour-intro-image" style={{ backgroundImage: `url(${images[city?.toLowerCase()] || images.heritage})` }} />
+          <div className="city-tour-hero">
+            <img src={cityIntro.image} alt={cityIntro.imageAlt} />
+            <div className="city-tour-hero-content">
+              <h1>{cityIntro.title}</h1>
+              <p>{cityIntro.subtitle}</p>
+            </div>
+          </div>
           <div className="city-tour-intro-copy">
-            <Eyebrow>{city} experiences</Eyebrow>
-            <h1>Discover {city}</h1>
-            <p>{city === "Mumbai" ? "Explore Mumbai through its iconic landmarks, vibrant markets, coastal roads, and neighbourhood stories. Meet local hosts, taste authentic food, and experience the city beyond the guidebooks. Our Mumbai tours are thoughtfully paced, personal, and designed for curious travellers." : city ? `Discover the history, culture, food, and local stories that make ${city} unforgettable. Join our locally led tours for a thoughtful and memorable experience.` : `Join our specially curated ${category.toLowerCase()} experiences, led by local experts and designed around memorable stories, places, and moments.`}</p>
+            <div className="city-tour-intro-heading">
+              <Eyebrow>Discover</Eyebrow>
+              <h2>{cityIntro.heading}</h2>
+            </div>
+            <div className="city-tour-intro-body">
+              {cityIntro.description.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </div>
           </div>
         </section>
       )}
@@ -3536,30 +3572,32 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
               onChange={(event) => update("tag", event.target.value)}
             />
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.featured}
-              onChange={(event) => update("featured", event.target.checked)}
-            />{" "}
-            Feature this tour
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.dark}
-              onChange={(event) => update("dark", event.target.checked)}
-            />{" "}
-            Use dark booking button
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.published}
-              onChange={(event) => update("published", event.target.checked)}
-            />{" "}
-            Publish immediately
-          </label>
+          <div className="admin-tour-toggles">
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.featured}
+                onChange={(event) => update("featured", event.target.checked)}
+              />
+              <span>Feature this tour</span>
+            </label>
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.dark}
+                onChange={(event) => update("dark", event.target.checked)}
+              />
+              <span>Use dark booking button</span>
+            </label>
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.published}
+                onChange={(event) => update("published", event.target.checked)}
+              />
+              <span>Publish immediately</span>
+            </label>
+          </div>
           <button className="primary-button" type="submit" disabled={saving}>
             {saving ? "Saving…" : tour ? "Update Tour →" : "Save Tour →"}
           </button>
@@ -3953,29 +3991,48 @@ function TourDetail({
     },
   ].filter(Boolean);
   const hasPriceAndInclusions = priceRows.length || inclusions.length || tour.inclusion_groups?.length;
+  const legacyMeetingLocation = {
+    start_meeting_point: tour.start_meeting_point || "",
+    start_meeting_map_url: tour.start_meeting_map_url || "",
+    end_meeting_point: tour.end_meeting_point || "",
+    end_meeting_map_url: tour.end_meeting_map_url || "",
+  };
+  const storedMeetingLocations = (Array.isArray(tour.meeting_locations)
+    ? tour.meeting_locations
+    : [])
+    .filter((location) => location && typeof location === "object")
+    .filter((location) => (
+      location.start_meeting_point ||
+      location.start_meeting_map_url ||
+      location.end_meeting_point ||
+      location.end_meeting_map_url
+    ));
+  const meetingLocations = storedMeetingLocations.length
+    ? storedMeetingLocations
+    : Object.values(legacyMeetingLocation).some(Boolean)
+      ? [legacyMeetingLocation]
+      : [];
+  const primaryMeetingLocation = meetingLocations[0] || legacyMeetingLocation;
   const startMapUrl = getGoogleMapsUrl(
-    tour.start_meeting_map_url,
-    tour.start_meeting_point,
+    primaryMeetingLocation.start_meeting_map_url,
+    primaryMeetingLocation.start_meeting_point,
   );
   const endMapUrl = getGoogleMapsUrl(
-    tour.end_meeting_map_url,
-    tour.end_meeting_point,
+    primaryMeetingLocation.end_meeting_map_url,
+    primaryMeetingLocation.end_meeting_point,
   );
   const routeMapUrl = getGoogleMapsRouteUrl(
-    tour.start_meeting_point,
-    tour.end_meeting_point,
+    primaryMeetingLocation.start_meeting_point,
+    primaryMeetingLocation.end_meeting_point,
     startMapUrl || endMapUrl,
   );
   const routeMapEmbedUrl = getGoogleMapsEmbedUrl(
-    tour.start_meeting_point,
-    tour.end_meeting_point,
+    primaryMeetingLocation.start_meeting_point,
+    primaryMeetingLocation.end_meeting_point,
   );
   const hasMeetingInformation = Boolean(
     tour.meeting_details ||
-      tour.start_meeting_point ||
-      tour.start_meeting_map_url ||
-      tour.end_meeting_point ||
-      tour.end_meeting_map_url,
+      meetingLocations.length,
   );
   const tourTabs = [
     ["tour-info", "Tour info"],
@@ -4111,37 +4168,61 @@ function TourDetail({
               <a href={routeMapUrl} target="_blank" rel="noreferrer">
                 <span className="material-symbols-outlined" aria-hidden="true">map</span>
                 <span>
-                  <b>{tour.start_meeting_point && tour.end_meeting_point ? "View the start-to-end route" : "View this meeting point"}</b>
+                  <b>{primaryMeetingLocation.start_meeting_point && primaryMeetingLocation.end_meeting_point ? meetingLocations.length > 1 ? "View the first start-to-end route" : "View the start-to-end route" : "View this meeting point"}</b>
                   <small>Open in Google Maps</small>
                 </span>
                 <span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>
               </a>
             </div>
           )}
-          {(tour.start_meeting_point || tour.start_meeting_map_url || tour.end_meeting_point || tour.end_meeting_map_url) && (
-            <div className="tour-meeting-locations">
-              {(tour.start_meeting_point || tour.start_meeting_map_url) && (
-                <a className="tour-map-window" href={startMapUrl} target="_blank" rel="noreferrer" aria-label="Open the start meeting point in Google Maps">
-                  <span className="material-symbols-outlined" aria-hidden="true">trip_origin</span>
-                  <span>
-                    <small>Starting point</small>
-                    <b>{tour.start_meeting_point || "Open the start location"}</b>
-                    <em>View in Google Maps</em>
-                  </span>
-                  <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
-                </a>
-              )}
-              {(tour.end_meeting_point || tour.end_meeting_map_url) && (
-                <a className="tour-map-window" href={endMapUrl} target="_blank" rel="noreferrer" aria-label="Open the end meeting point in Google Maps">
-                  <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
-                  <span>
-                    <small>Ending point</small>
-                    <b>{tour.end_meeting_point || "Open the end location"}</b>
-                    <em>View in Google Maps</em>
-                  </span>
-                  <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
-                </a>
-              )}
+          {meetingLocations.length > 0 && (
+            <div className="tour-meeting-location-groups">
+              {meetingLocations.map((location, index) => {
+                const locationStartMapUrl = getGoogleMapsUrl(
+                  location.start_meeting_map_url,
+                  location.start_meeting_point,
+                );
+                const locationEndMapUrl = getGoogleMapsUrl(
+                  location.end_meeting_map_url,
+                  location.end_meeting_point,
+                );
+                const hasStartLocation = Boolean(
+                  location.start_meeting_point || location.start_meeting_map_url,
+                );
+                const hasEndLocation = Boolean(
+                  location.end_meeting_point || location.end_meeting_map_url,
+                );
+                if (!hasStartLocation && !hasEndLocation) return null;
+                return (
+                  <div className="tour-meeting-location-group" key={`meeting-location-${index}`}>
+                    {meetingLocations.length > 1 && <h3>Meeting location {index + 1}</h3>}
+                    <div className="tour-meeting-locations">
+                      {hasStartLocation && (
+                        <a className="tour-map-window" href={locationStartMapUrl} target="_blank" rel="noreferrer" aria-label={`Open the start meeting point ${index + 1} in Google Maps`}>
+                          <span className="material-symbols-outlined" aria-hidden="true">trip_origin</span>
+                          <span>
+                            <small>Starting point</small>
+                            <b>{location.start_meeting_point || "Open the start location"}</b>
+                            <em>View in Google Maps</em>
+                          </span>
+                          <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
+                        </a>
+                      )}
+                      {hasEndLocation && (
+                        <a className="tour-map-window" href={locationEndMapUrl} target="_blank" rel="noreferrer" aria-label={`Open the end meeting point ${index + 1} in Google Maps`}>
+                          <span className="material-symbols-outlined" aria-hidden="true">location_on</span>
+                          <span>
+                            <small>Ending point</small>
+                            <b>{location.end_meeting_point || "Open the end location"}</b>
+                            <em>View in Google Maps</em>
+                          </span>
+                          <span className="material-symbols-outlined tour-map-window-arrow" aria-hidden="true">open_in_new</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -4486,6 +4567,27 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
   );
 }
 
+function getTourAvailableModes(tour) {
+  const configuredModes = Array.isArray(tour?.pricing?.available_modes)
+    ? tour.pricing.available_modes
+    : [];
+  const availableModes = ["Shared", "Private"].filter((mode) =>
+    configuredModes.includes(mode),
+  );
+  if (availableModes.length) return availableModes;
+
+  if (tour?.mode === "Private") return ["Private"];
+  if (tour?.mode === "Both" || tour?.mode === "Shared & Private") {
+    return ["Shared", "Private"];
+  }
+
+  const hasLegacyPrivatePricing = Boolean(
+    Number(tour?.private_price) > 0 ||
+      (Array.isArray(tour?.pricing?.private_tiers) && tour.pricing.private_tiers.length),
+  );
+  return hasLegacyPrivatePricing ? ["Shared", "Private"] : ["Shared"];
+}
+
 function getTourBookingPrices(tour) {
   const pricing = tour?.pricing || {};
   const normalizeTiers = (tiers) =>
@@ -4504,18 +4606,25 @@ function getTourBookingPrices(tour) {
           )
           .sort((left, right) => left.travellers - right.travellers)
       : [];
+  const sharedTiers = normalizeTiers(pricing.shared_tiers);
+  const privateTiers = normalizeTiers(pricing.private_tiers);
+  const minimumTierPrice = (tiers) =>
+    tiers.length ? Math.min(...tiers.map((tier) => tier.price_per_person)) : 0;
   const basePrice = Number(tour?.price_value ?? tour?.price) || 0;
-  const sharedPrice = Number(tour?.shared_price) > 0
-    ? Number(tour.shared_price)
-    : basePrice;
-  const privatePrice = Number(tour?.private_price) > 0
-    ? Number(tour.private_price)
-    : basePrice;
+  const availableModes = getTourAvailableModes(tour);
+  const sharedPrice = availableModes.includes("Shared")
+    ? minimumTierPrice(sharedTiers) || basePrice
+    : 0;
+  const privatePrice = availableModes.includes("Private")
+    ? minimumTierPrice(privateTiers) || Number(tour?.private_price) ||
+      (tour?.mode === "Private" ? basePrice : 0)
+    : 0;
   return {
+    availableModes,
     shared: sharedPrice,
     private: privatePrice,
-    sharedTiers: normalizeTiers(pricing.shared_tiers),
-    privateTiers: normalizeTiers(pricing.private_tiers),
+    sharedTiers,
+    privateTiers,
   };
 }
 
@@ -4889,8 +4998,8 @@ function Contact() {
           <div className="contact-links">
             <a href="https://wa.me/919619952139">◉ +91 96199 52139</a>
             <a href="tel:+919619952139">☎ +91 96199 52139</a>
-            <a href="mailto:hello@nomadwanderers.in">
-              ✉ hello@nomadwanderers.in
+            <a href="mailto:wanderersnomad@gmail.com">
+              ✉ wanderersnomad@gmail.com
             </a>
           </div>
         </div>
@@ -5049,8 +5158,8 @@ function ContactFlow() {
           <div className="contact-links">
             <a href="https://wa.me/919619952139">◉ Chat on WhatsApp</a>
             <a href="tel:+919619952139">☎ +91 96199 52139</a>
-            <a href="mailto:hello@nomadwanderers.in">
-              ✉ hello@nomadwanderers.in
+            <a href="mailto:wanderersnomad@gmail.com">
+              ✉ wanderersnomad@gmail.com
             </a>
           </div>
         </div>
@@ -5549,8 +5658,8 @@ function ContactFlowV2({ session }) {
           <div className="contact-links">
             <a href="https://wa.me/919619952139">◉ Chat on WhatsApp</a>
             <a href="tel:+919619952139">☎ +91 96199 52139</a>
-            <a href="mailto:hello@nomadwanderers.in">
-              ✉ hello@nomadwanderers.in
+            <a href="mailto:wanderersnomad@gmail.com">
+              ✉ wanderersnomad@gmail.com
             </a>
           </div>
         </div>
@@ -6820,6 +6929,21 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     start_meeting_map_url: tour?.start_meeting_map_url || "",
     end_meeting_point: tour?.end_meeting_point || "",
     end_meeting_map_url: tour?.end_meeting_map_url || "",
+    meeting_locations: (
+      Array.isArray(tour?.meeting_locations) && tour.meeting_locations.length
+        ? tour.meeting_locations
+        : [{
+            start_meeting_point: tour?.start_meeting_point || "",
+            start_meeting_map_url: tour?.start_meeting_map_url || "",
+            end_meeting_point: tour?.end_meeting_point || "",
+            end_meeting_map_url: tour?.end_meeting_map_url || "",
+          }]
+    ).map((location) => ({
+      start_meeting_point: location?.start_meeting_point || "",
+      start_meeting_map_url: location?.start_meeting_map_url || "",
+      end_meeting_point: location?.end_meeting_point || "",
+      end_meeting_map_url: location?.end_meeting_map_url || "",
+    })),
     traveller_video_url: tour?.traveller_video_url || "",
     faq_items: (tour?.faq_items?.length
       ? tour.faq_items
@@ -6887,6 +7011,37 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     setForm((current) => ({
       ...current,
       time_slots: current.time_slots.filter((_, slotIndex) => slotIndex !== index),
+    }));
+  };
+  const updateMeetingLocation = (index, field, value) => {
+    setForm((current) => ({
+      ...current,
+      meeting_locations: current.meeting_locations.map((location, locationIndex) =>
+        locationIndex === index ? { ...location, [field]: value } : location,
+      ),
+    }));
+  };
+  const addMeetingLocation = () => {
+    setForm((current) => (
+      current.meeting_locations.length >= 10
+        ? current
+        : {
+            ...current,
+            meeting_locations: [...current.meeting_locations, {
+              start_meeting_point: "",
+              start_meeting_map_url: "",
+              end_meeting_point: "",
+              end_meeting_map_url: "",
+            }],
+          }
+    ));
+  };
+  const removeMeetingLocation = (index) => {
+    setForm((current) => ({
+      ...current,
+      meeting_locations: current.meeting_locations.filter(
+        (_, locationIndex) => locationIndex !== index,
+      ),
     }));
   };
   const updatePricingTier = (field, index, tierField, value) => {
@@ -7110,6 +7265,20 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       setStatus(`Review ${incompleteReviewIndex + 1}: complete both the traveller name and review.`);
       return;
     }
+    const meetingLocations = form.meeting_locations
+      .map((location) => ({
+        start_meeting_point: location.start_meeting_point.trim(),
+        start_meeting_map_url: location.start_meeting_map_url.trim() || null,
+        end_meeting_point: location.end_meeting_point.trim(),
+        end_meeting_map_url: location.end_meeting_map_url.trim() || null,
+      }))
+      .filter((location) => Object.values(location).some(Boolean));
+    const primaryMeetingLocation = meetingLocations[0] || {
+      start_meeting_point: "",
+      start_meeting_map_url: null,
+      end_meeting_point: "",
+      end_meeting_map_url: null,
+    };
     setSaving(true);
     const timeSlots = [...new Set(
       form.time_slots.map((slot) => slot.trim()).filter(Boolean),
@@ -7117,6 +7286,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     const {
       shared_pricing_tiers: _sharedPricingTiers,
       private_pricing_tiers: _privatePricingTiers,
+      meeting_locations: _meetingLocations,
       ...formValues
     } = form;
     const payload = {
@@ -7137,10 +7307,11 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         .map((item) => item.trim())
         .filter(Boolean),
       meeting_details: form.meeting_details.trim(),
-      start_meeting_point: form.start_meeting_point.trim(),
-      start_meeting_map_url: form.start_meeting_map_url.trim() || null,
-      end_meeting_point: form.end_meeting_point.trim(),
-      end_meeting_map_url: form.end_meeting_map_url.trim() || null,
+      start_meeting_point: primaryMeetingLocation.start_meeting_point,
+      start_meeting_map_url: primaryMeetingLocation.start_meeting_map_url,
+      end_meeting_point: primaryMeetingLocation.end_meeting_point,
+      end_meeting_map_url: primaryMeetingLocation.end_meeting_map_url,
+      meeting_locations: meetingLocations,
       traveller_video_url: form.traveller_video_url.trim() || null,
       private_price: Math.min(...privatePricingTiers.map((tier) => tier.price_per_person)),
       pricing: {
@@ -7655,24 +7826,53 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           <fieldset className="admin-meeting-locations">
             <legend>Start and end meeting locations</legend>
             <small>In Google Maps, search the location, tap <b>Share</b>, then copy and paste its link here. Both map links are optional.</small>
-            <div>
-              <label>
-                Start meeting point
-                <input value={form.start_meeting_point} onChange={(event) => update("start_meeting_point", event.target.value)} placeholder="e.g. Gateway of India entrance" />
-              </label>
-              <label>
-                Start Google Maps link
-                <input type="url" value={form.start_meeting_map_url} onChange={(event) => update("start_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
-              </label>
-              <label>
-                End meeting point
-                <input value={form.end_meeting_point} onChange={(event) => update("end_meeting_point", event.target.value)} placeholder="e.g. Chhatrapati Shivaji Maharaj Terminus" />
-              </label>
-              <label>
-                End Google Maps link
-                <input type="url" value={form.end_meeting_map_url} onChange={(event) => update("end_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
-              </label>
+            <div className="admin-meeting-location-list">
+              {form.meeting_locations.map((location, index) => (
+                <section className="admin-meeting-location" key={index}>
+                  <div className="admin-meeting-location-heading">
+                    <b>{form.meeting_locations.length > 1 ? `Meeting location ${index + 1}` : "Meeting location"}</b>
+                    {form.meeting_locations.length > 1 && (
+                      <button
+                        type="button"
+                        className="repeat-remove"
+                        onClick={() => removeMeetingLocation(index)}
+                        aria-label={`Remove meeting location ${index + 1}`}
+                      >
+                        <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="admin-meeting-location-fields">
+                    <label>
+                      Start meeting point
+                      <input value={location.start_meeting_point} onChange={(event) => updateMeetingLocation(index, "start_meeting_point", event.target.value)} placeholder="e.g. Gateway of India entrance" />
+                    </label>
+                    <label>
+                      Start Google Maps link
+                      <input type="url" value={location.start_meeting_map_url} onChange={(event) => updateMeetingLocation(index, "start_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
+                    </label>
+                    <label>
+                      End meeting point
+                      <input value={location.end_meeting_point} onChange={(event) => updateMeetingLocation(index, "end_meeting_point", event.target.value)} placeholder="e.g. Chhatrapati Shivaji Maharaj Terminus" />
+                    </label>
+                    <label>
+                      End Google Maps link
+                      <input type="url" value={location.end_meeting_map_url} onChange={(event) => updateMeetingLocation(index, "end_meeting_map_url", event.target.value)} placeholder="https://maps.app.goo.gl/..." />
+                    </label>
+                  </div>
+                </section>
+              ))}
             </div>
+            <button
+              type="button"
+              className="repeat-add"
+              onClick={addMeetingLocation}
+              disabled={form.meeting_locations.length >= 10}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">add</span>
+              Add another meeting
+            </button>
           </fieldset>
           <fieldset className="admin-repeat-section">
             <legend>FAQs</legend>
@@ -7857,30 +8057,32 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               placeholder="Best Seller"
             />
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.featured}
-              onChange={(event) => update("featured", event.target.checked)}
-            />{" "}
-            Feature this tour
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.dark}
-              onChange={(event) => update("dark", event.target.checked)}
-            />{" "}
-            Use dark booking button
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.published}
-              onChange={(event) => update("published", event.target.checked)}
-            />{" "}
-            Publish immediately
-          </label>
+          <div className="admin-tour-toggles">
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.featured}
+                onChange={(event) => update("featured", event.target.checked)}
+              />
+              <span>Feature this tour</span>
+            </label>
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.dark}
+                onChange={(event) => update("dark", event.target.checked)}
+              />
+              <span>Use dark booking button</span>
+            </label>
+            <label className="admin-tour-toggle">
+              <input
+                type="checkbox"
+                checked={form.published}
+                onChange={(event) => update("published", event.target.checked)}
+              />
+              <span>Publish immediately</span>
+            </label>
+          </div>
           <button className="primary-button" type="submit" disabled={saving}>
             {saving ? "Saving..." : tour ? "Update tour" : "Save tour"}
           </button>
@@ -7998,6 +8200,7 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
     customizable: tour?.availability?.customizable ?? true,
     gallery_images: (tour?.gallery_images || []).join("\n"),
     meeting_details: tour?.meeting_details || "",
+    meeting_locations: Array.isArray(tour?.meeting_locations) ? tour.meeting_locations : [],
     traveller_video_url: tour?.traveller_video_url || "",
     faq_items: tour?.faq_items?.length ? tour.faq_items : [{ question: "", answer: "" }],
     tag: tour?.tag || "",
@@ -8147,6 +8350,7 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
         .map((image) => image.trim())
         .filter(Boolean),
       meeting_details: form.meeting_details.trim(),
+      meeting_locations: form.meeting_locations,
       traveller_video_url: form.traveller_video_url.trim() || null,
       private_price: form.mode === "Private" ? Number(form.price) : null,
       faq_items: form.faq_items
@@ -8772,12 +8976,14 @@ function Footer({ go }) {
         <b>Top destinations</b>
         <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
+        <button onClick={() => go("/trips")}>South India</button>
+        <button onClick={() => go("/trips")}>North India</button>
         <button onClick={() => go("/tours?city=Mumbai&category=Cultural")}>Dharavi</button>
         <button onClick={() => go("/tours/unique")}>Unique experiences</button>
       </div>
       <div className="footer-contact">
         <b>Contact & updates</b>
-        <a href="mailto:hello@nomadwanderers.in">hello@nomadwanderers.in</a>
+        <a href="mailto:wanderersnomad@gmail.com">wanderersnomad@gmail.com</a>
         <a href="tel:+919619952139">+91 96199 52139</a>
         <span>Colaba Causeway, Mumbai</span>
         <div className="footer-socials">
