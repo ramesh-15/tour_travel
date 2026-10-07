@@ -4259,7 +4259,7 @@ function TourDetail({
           {hasMultipleDurations && (
             <p className="tour-selected-duration">Compare prices for each available duration.</p>
           )}
-          {priceRows.length > 0 && <div className={`tour-price-grid${hasMultipleDurations ? " tour-duration-price-grid" : ""}`}>{priceRows.map((item) => <article key={item.key || item.label}><div>{item.duration && <span className="tour-price-mode">{item.mode} tour{item.from ? " · from" : ""}</span>}<h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
+          {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
           {displayedGroupPriceTables.length > 0 && (
             <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
               {displayedGroupPriceTables.map((table) => (

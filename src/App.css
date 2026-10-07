@@ -1576,7 +1576,6 @@ h3 {
 .tour-price-mode { display: block; margin-bottom: 5px; color: var(--teal); font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .tour-group-price-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 920px; margin-top: 18px; }
 @media (min-width: 560px) {
-  .tour-price-grid.tour-duration-price-grid,
   .tour-group-price-tables.tour-duration-price-tables { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .tour-group-price-tables > article { padding: 22px; border: 1px solid #dbe8e6; border-radius: 14px; background: #f8fcfb; }
