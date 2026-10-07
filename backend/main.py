@@ -24,7 +24,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Respon
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 import db_models
 import config
@@ -73,6 +73,7 @@ TripType = Literal[
 ScheduleType = Literal["Daily", "Specific date"]
 UserRole = Literal["customer", "admin", "operations", "support"]
 BookingStatus = Literal["pending", "confirmed", "cancelled", "completed"]
+BookingMode = Literal["Shared", "Private"]
 ResponseItem = TypeVar("ResponseItem")
 
 
@@ -142,6 +143,27 @@ class PricingTier(BaseModel):
     price_per_person: float = Field(gt=0, le=10_000_000)
 
 
+class DurationPricingOption(BaseModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    duration: str = Field(min_length=2, max_length=80)
+    shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    available_modes: list[BookingMode] = Field(min_length=1, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_pricing(self) -> "DurationPricingOption":
+        if len(set(self.available_modes)) != len(self.available_modes):
+            raise ValueError("Each duration can include Shared and Private only once")
+        for mode, tiers in (("Shared", self.shared_tiers), ("Private", self.private_tiers)):
+            if mode not in self.available_modes:
+                continue
+            if not tiers:
+                raise ValueError(f"{mode} pricing needs at least one group size")
+            if len({tier.travellers for tier in tiers}) != len(tiers):
+                raise ValueError(f"{mode} pricing cannot repeat a group size")
+        return self
+
+
 class TourHighlight(BaseModel):
     title: str = Field(min_length=2, max_length=160)
     description: str = Field(default="", max_length=2000)
@@ -153,6 +175,18 @@ class TourPricing(BaseModel):
     tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    available_modes: list[BookingMode] | None = Field(default=None, min_length=1, max_length=2)
+    duration_options: list[DurationPricingOption] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_duration_options(self) -> "TourPricing":
+        ids = [option.id for option in self.duration_options]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Each duration option needs a unique id")
+        durations = [option.duration.strip().casefold() for option in self.duration_options]
+        if len(set(durations)) != len(durations):
+            raise ValueError("Each duration option needs a unique duration")
+        return self
 
 
 class TourAvailability(BaseModel):
@@ -309,6 +343,8 @@ class BookingInput(BaseModel):
     tour_id: int = Field(gt=0)
     travel_date: date
     travellers: int = Field(ge=1, le=20)
+    booking_mode: BookingMode | None = None
+    duration_option_id: str | None = Field(default=None, min_length=1, max_length=80)
     contact_phone: str = Field(min_length=8, max_length=40)
     special_requests: str = Field(default="", max_length=4000)
 
@@ -321,6 +357,8 @@ class Booking(BaseModel):
     duration: str
     image_url: HttpUrl
     price: float
+    booking_mode: BookingMode
+    duration_option_id: str | None = None
     travel_date: date
     travellers: int
     contact_phone: str

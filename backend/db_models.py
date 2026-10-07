@@ -284,6 +284,10 @@ def initialize_database() -> None:
             tour_id BIGINT NOT NULL,
             travel_date DATE NOT NULL,
             travellers SMALLINT NOT NULL CHECK (travellers >= 1),
+            booking_mode VARCHAR(16) NOT NULL DEFAULT 'Shared',
+            duration_option_id VARCHAR(80) NULL,
+            selected_duration VARCHAR(80) NOT NULL DEFAULT '',
+            unit_price DECIMAL(12, 2) NULL,
             contact_phone VARCHAR(40) NOT NULL DEFAULT '',
             special_requests TEXT NOT NULL,
             booking_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -378,6 +382,10 @@ def initialize_database() -> None:
             ("users", "username", "VARCHAR(80) NULL"),
             ("users", "phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
             ("bookings", "contact_phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
+            ("bookings", "booking_mode", "VARCHAR(16) NOT NULL DEFAULT 'Shared'"),
+            ("bookings", "duration_option_id", "VARCHAR(80) NULL"),
+            ("bookings", "selected_duration", "VARCHAR(80) NOT NULL DEFAULT ''"),
+            ("bookings", "unit_price", "DECIMAL(12, 2) NULL"),
             ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'customer'"),
             ("users", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
             ("razorpay_orders", "terms_version", "VARCHAR(32) NOT NULL DEFAULT 'legacy'"),
@@ -897,17 +905,177 @@ def update_user_access(user_id: int, role: str | None = None, is_active: bool | 
     return get_user(user_id)
 
 
+def _tour_pricing(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            value = {}
+    return value if isinstance(value, dict) else {}
+
+
+def _positive_price(value: Any) -> float:
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return price if price > 0 else 0.0
+
+
+def _tour_duration_options(tour: dict[str, Any], pricing: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_options = pricing.get("duration_options")
+    if isinstance(raw_options, list):
+        options: list[dict[str, Any]] = []
+        for value in raw_options:
+            if not isinstance(value, dict):
+                continue
+            option_id = str(value.get("id") or "").strip()
+            duration = str(value.get("duration") or "").strip()
+            if not option_id or not duration:
+                continue
+            options.append(
+                {
+                    "id": option_id,
+                    "duration": duration,
+                    "available_modes": value.get("available_modes"),
+                    "shared_tiers": value.get("shared_tiers"),
+                    "private_tiers": value.get("private_tiers"),
+                    "_legacy": False,
+                }
+            )
+        if options:
+            return options
+
+    return [
+        {
+            "id": "default",
+            "duration": str(tour.get("duration") or "").strip(),
+            "available_modes": pricing.get("available_modes"),
+            "shared_tiers": pricing.get("shared_tiers"),
+            "private_tiers": pricing.get("private_tiers"),
+            "_legacy": True,
+        }
+    ]
+
+
+def _resolve_tour_duration_option(
+    tour: dict[str, Any],
+    pricing: dict[str, Any],
+    requested_option_id: Any,
+) -> dict[str, Any]:
+    options = _tour_duration_options(tour, pricing)
+    option_id = str(requested_option_id or "").strip()
+    if option_id:
+        for option in options:
+            if option["id"] == option_id:
+                return option
+        raise ValueError("That tour duration is no longer available")
+    if len(options) > 1:
+        raise ValueError("Choose a duration before booking this tour")
+    return options[0]
+
+
+def _tour_booking_modes(tour: dict[str, Any], pricing: dict[str, Any]) -> list[str]:
+    configured = pricing.get("available_modes")
+    if isinstance(configured, list):
+        modes = [mode for mode in ("Shared", "Private") if mode in configured]
+        if modes:
+            return modes
+
+    mode = str(tour.get("mode") or "")
+    if mode == "Private":
+        return ["Private"]
+    if mode in {"Both", "Shared & Private"}:
+        return ["Shared", "Private"]
+
+    has_legacy_private_price = (
+        _positive_price(tour.get("private_price")) > 0
+        or bool(pricing.get("private_tiers"))
+    )
+    return ["Shared", "Private"] if has_legacy_private_price else ["Shared"]
+
+
+def _booking_unit_price(
+    tour: dict[str, Any],
+    booking_mode: str,
+    travellers: int,
+    pricing: dict[str, Any] | None = None,
+    allow_legacy_price_fallback: bool = True,
+) -> float:
+    pricing = _tour_pricing(tour.get("pricing")) if pricing is None else _tour_pricing(pricing)
+    available_modes = _tour_booking_modes(tour, pricing)
+    if booking_mode not in available_modes:
+        raise ValueError(f"This tour is not available as a {booking_mode.lower()} tour")
+
+    tier_key = "private_tiers" if booking_mode == "Private" else "shared_tiers"
+    raw_tiers = pricing.get(tier_key)
+    if isinstance(raw_tiers, list) and raw_tiers:
+        for tier in raw_tiers:
+            if not isinstance(tier, dict):
+                continue
+            try:
+                tier_travellers = int(tier.get("travellers"))
+            except (TypeError, ValueError):
+                continue
+            tier_price = _positive_price(tier.get("price_per_person"))
+            if tier_travellers == travellers and tier_price > 0:
+                return tier_price
+        raise ValueError(
+            f"No {booking_mode.lower()} price is configured for {travellers} traveller{'s' if travellers != 1 else ''}"
+        )
+
+    if not allow_legacy_price_fallback:
+        raise ValueError(
+            f"No {booking_mode.lower()} price is configured for {travellers} traveller{'s' if travellers != 1 else ''}"
+        )
+
+    base_price = (
+        _positive_price(tour.get("private_price"))
+        if booking_mode == "Private"
+        else _positive_price(tour.get("price"))
+    )
+    if booking_mode == "Private" and base_price <= 0:
+        base_price = _positive_price(tour.get("price"))
+    if base_price <= 0:
+        raise ValueError(f"No {booking_mode.lower()} price is configured for this tour")
+    return base_price
+
+
 def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | None = None) -> dict[str, Any]:
     now = _utc_now()
     with database() as connection:
         existing_id = _claim_idempotency(connection, user_id, "create_booking", idempotency_key, data)
         if existing_id is not None:
-            return _fetch_one(connection, """SELECT bookings.*, tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price FROM bookings JOIN tours ON tours.id = bookings.tour_id WHERE bookings.id = %s""", (existing_id,)) or {}
+            return _fetch_one(connection, """SELECT bookings.*, tours.title AS tour_title, tours.city,
+            COALESCE(NULLIF(bookings.selected_duration, ''), tours.duration) AS duration, tours.image_url,
+            COALESCE(NULLIF(bookings.unit_price, 0), tours.price) AS price
+            FROM bookings JOIN tours ON tours.id = bookings.tour_id WHERE bookings.id = %s""", (existing_id,)) or {}
         # Locking the tour serializes capacity checks for the same departure and
         # prevents two last-seat requests from both succeeding.
-        tour = _fetch_one(connection, "SELECT capacity FROM tours WHERE id = %s AND published = TRUE FOR UPDATE", (data["tour_id"],))
+        tour = _fetch_one(
+            connection,
+            """SELECT capacity, price, private_price, mode, duration, pricing FROM tours
+            WHERE id = %s AND published = TRUE FOR UPDATE""",
+            (data["tour_id"],),
+        )
         if not tour:
             return {}
+        pricing = _tour_pricing(tour.get("pricing"))
+        duration_option = _resolve_tour_duration_option(
+            tour,
+            pricing,
+            data.get("duration_option_id"),
+        )
+        available_modes = _tour_booking_modes(tour, duration_option)
+        booking_mode = str(data.get("booking_mode") or available_modes[0])
+        unit_price = _booking_unit_price(
+            tour,
+            booking_mode,
+            int(data["travellers"]),
+            duration_option,
+            allow_legacy_price_fallback=bool(duration_option.get("_legacy")),
+        )
+        selected_duration = str(duration_option.get("duration") or tour.get("duration") or "")
         reserved = _fetch_one(
             connection,
             """SELECT COALESCE(SUM(travellers), 0) AS total FROM bookings
@@ -919,13 +1087,17 @@ def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | No
         booking_id = _insert_and_get_id(
             connection,
             """INSERT INTO bookings
-            (user_id, tour_id, travel_date, travellers, contact_phone, special_requests, booking_status, payment_status, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, 'pending', 'unpaid', %s, %s)""",
+            (user_id, tour_id, travel_date, travellers, booking_mode, duration_option_id, selected_duration, unit_price, contact_phone, special_requests, booking_status, payment_status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', 'unpaid', %s, %s)""",
             (
                 user_id,
                 data["tour_id"],
                 data["travel_date"],
                 data["travellers"],
+                booking_mode,
+                duration_option["id"],
+                selected_duration,
+                unit_price,
                 data.get("contact_phone", ""),
                 data.get("special_requests", ""),
                 now,
@@ -935,7 +1107,9 @@ def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | No
         _complete_idempotency(connection, user_id, "create_booking", idempotency_key, booking_id)
         return _fetch_one(
             connection,
-            """SELECT bookings.*, tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price
+            """SELECT bookings.*, tours.title AS tour_title, tours.city,
+            COALESCE(NULLIF(bookings.selected_duration, ''), tours.duration) AS duration, tours.image_url,
+            COALESCE(NULLIF(bookings.unit_price, 0), tours.price) AS price
             FROM bookings JOIN tours ON tours.id = bookings.tour_id WHERE bookings.id = %s""",
             (booking_id,),
         ) or {}
@@ -945,7 +1119,9 @@ def list_user_bookings(user_id: int) -> list[dict[str, Any]]:
     with database() as connection:
         return _fetch_all(
             connection,
-            """SELECT bookings.*, tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price
+            """SELECT bookings.*, tours.title AS tour_title, tours.city,
+            COALESCE(NULLIF(bookings.selected_duration, ''), tours.duration) AS duration, tours.image_url,
+            COALESCE(NULLIF(bookings.unit_price, 0), tours.price) AS price
             FROM bookings JOIN tours ON tours.id = bookings.tour_id
             WHERE bookings.user_id = %s ORDER BY bookings.travel_date ASC, bookings.id DESC""",
             (user_id,),
@@ -957,7 +1133,9 @@ def get_booking(booking_id: int) -> dict[str, Any] | None:
         return _fetch_one(
             connection,
             """SELECT bookings.*, users.name AS customer_name, users.email AS customer_email,
-            tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price, tours.guide_name
+            tours.title AS tour_title, tours.city,
+            COALESCE(NULLIF(bookings.selected_duration, ''), tours.duration) AS duration, tours.image_url,
+            COALESCE(NULLIF(bookings.unit_price, 0), tours.price) AS price, tours.guide_name
             FROM bookings JOIN users ON users.id = bookings.user_id
             JOIN tours ON tours.id = bookings.tour_id WHERE bookings.id = %s""",
             (booking_id,),
@@ -1056,7 +1234,9 @@ def list_staff_bookings() -> list[dict[str, Any]]:
         return _fetch_all(
             connection,
             """SELECT bookings.*, users.name AS customer_name, users.email AS customer_email,
-            tours.title AS tour_title, tours.city, tours.duration, tours.image_url, tours.price, tours.guide_name
+            tours.title AS tour_title, tours.city,
+            COALESCE(NULLIF(bookings.selected_duration, ''), tours.duration) AS duration, tours.image_url,
+            COALESCE(NULLIF(bookings.unit_price, 0), tours.price) AS price, tours.guide_name
             FROM bookings JOIN users ON users.id = bookings.user_id
             JOIN tours ON tours.id = bookings.tour_id
             ORDER BY bookings.travel_date ASC, bookings.id DESC""",
@@ -1321,10 +1501,23 @@ def paginate_public_tours(
 ) -> tuple[list[dict[str, Any]], int]:
     clauses = ["published = TRUE"]
     parameters: list[Any] = []
-    for column, value in (("city", city), ("mode", mode), ("trip_type", trip_type)):
+    for column, value in (("city", city), ("trip_type", trip_type)):
         if value:
             clauses.append(f"LOWER({column}) = LOWER(%s)")
             parameters.append(value)
+    if mode:
+        normalized_mode = str(mode).strip()
+        if normalized_mode.lower() in {"shared", "private"}:
+            canonical_mode = normalized_mode.capitalize()
+            clauses.append(
+                """(LOWER(mode) = LOWER(%s) OR LOWER(mode) IN ('both', 'shared & private')
+                OR JSON_SEARCH(pricing, 'one', %s, NULL,
+                '$.duration_options[*].available_modes[*]') IS NOT NULL)"""
+            )
+            parameters.extend((canonical_mode, canonical_mode))
+        else:
+            clauses.append("LOWER(mode) = LOWER(%s)")
+            parameters.append(normalized_mode)
     if multi_day:
         clauses.append("trip_type IN ('Weekly trip', 'Multi-day trip')")
     elif not trip_type:

@@ -1,8 +1,8 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 export const PAYMENT_TERMS_VERSION = "2026-09-19";
 
-const terms = [
+const paymentTerms = [
   ["Payment Gateway", "Online payments on Nomad Wanderers are processed through Razorpay, subject to availability and the payment methods enabled for the merchant account. Available methods may include UPI, credit cards, debit cards, net banking, wallets and other methods supported by Razorpay. Nomad Wanderers does not directly store complete card numbers, CVV details, UPI PINs, internet-banking passwords or other sensitive payment authentication credentials."],
   ["Booking Confirmation", "A booking is considered confirmed only after the required payment is successfully completed, Nomad Wanderers receives successful payment confirmation, and a booking confirmation is issued to the customer. Initiating a payment alone does not guarantee a booking. If payment is successful but no booking confirmation is received, the customer should contact Nomad Wanderers with the booking reference and payment transaction details."],
   ["Prices, Taxes and Charges", "All applicable tour or package prices will be displayed or communicated before payment. The final amount may include the tour/package price, applicable taxes, selected add-on services and other charges disclosed before payment. The amount shown at final checkout is the amount payable for that booking."],
@@ -25,6 +25,134 @@ const terms = [
   ["Acceptance", "By selecting the checkout acknowledgement and proceeding with payment, the customer confirms acceptance of the applicable Payment Terms & Conditions, including the cancellation and refund terms."],
 ];
 
+const termsFor = (headings) =>
+  paymentTerms.filter(([heading]) => headings.includes(heading));
+
+const privacyPolicyTerms = [
+  [
+    "Information used for bookings",
+    "When you create an account, make a booking, send an enquiry or contact Nomad Wanderers, we use the information you provide, such as your name, email address, phone number, traveller count, travel date, tour preferences and message, to respond to you and manage the requested service.",
+  ],
+  [
+    "How booking information is used",
+    "Booking and contact information is used to arrange and manage tours, send booking-related communications, provide customer support and help resolve payment, cancellation or refund questions.",
+  ],
+  ...termsFor(["Payment Gateway", "Payment Security", "Third-Party Payment Services"]),
+  [
+    "Privacy questions",
+    "For questions about personal information connected with an enquiry or booking, contact Nomad Wanderers at wanderersnomad@gmail.com.",
+  ],
+];
+
+const footerPolicies = {
+  terms: {
+    eyebrow: "Nomad Wanderers",
+    title: "Terms and Conditions",
+    intro:
+      "These Payment Terms & Conditions govern bookings and payments made to Nomad Wanderers. Online payments may be processed through Razorpay, a third-party payment gateway. Customers should review booking details, price, travel date and cancellation terms before completing payment.",
+    sections: paymentTerms,
+  },
+  refund: {
+    eyebrow: "Bookings & payments",
+    title: "Refund Policy",
+    intro:
+      "This Refund Policy explains the cancellation, refund and payment-reversal terms that apply to Nomad Wanderers bookings. Any tour- or package-specific conditions shown before payment also apply to that booking.",
+    sections: termsFor([
+      "Advance and Partial Payments",
+      "Duplicate Payments",
+      "Cancellation by Customer",
+      "Cancellation or Rescheduling by Nomad Wanderers",
+      "Refunds and Partial Refunds",
+      "Non-Refundable Items",
+      "Promotional Codes and Discounts",
+      "Refund Requests",
+    ]),
+  },
+  privacy: {
+    eyebrow: "Your information",
+    title: "Privacy Policy",
+    intro:
+      "This Privacy Policy explains how Nomad Wanderers uses the information submitted through its booking and enquiry forms, including payment-related information handled during checkout.",
+    sections: privacyPolicyTerms,
+  },
+};
+
+export function LegalPolicyModal({ policy, onClose }) {
+  const content = footerPolicies[policy] || footerPolicies.terms;
+  const titleId = useId();
+  const descriptionId = useId();
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const trigger = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      trigger?.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="legal-policy-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="legal-policy-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <button
+          ref={closeButtonRef}
+          className="legal-policy-close"
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${content.title}`}
+        >
+          ×
+        </button>
+        <header className="legal-policy-header">
+          <span>{content.eyebrow}</span>
+          <h2 id={titleId}>{content.title}</h2>
+          <p id={descriptionId}>{content.intro}</p>
+        </header>
+        <div className="legal-policy-content">
+          <ol>
+            {content.sections.map(([heading, text]) => (
+              <li key={heading}>
+                <h3>{heading}</h3>
+                <p>{text}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="legal-policy-contact">
+            <b>Contact &amp; Support:</b> For booking, payment, cancellation,
+            refund or privacy assistance, email{" "}
+            <a href="mailto:wanderersnomad@gmail.com">
+              wanderersnomad@gmail.com
+            </a>.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function PaymentTermsAcceptance({ accepted, onChange, disabled = false }) {
   const checkboxId = useId();
 
@@ -41,7 +169,7 @@ export function PaymentTermsAcceptance({ accepted, onChange, disabled = false })
             completing payment.
           </p>
           <ol>
-            {terms.map(([heading, text]) => (
+            {paymentTerms.map(([heading, text]) => (
               <li key={heading}>
                 <b>{heading}</b>
                 <p>{text}</p>

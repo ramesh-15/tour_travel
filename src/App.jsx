@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import delhiIndiaGate from "./assets/delhi-india-gate.png";
 import roadTripCar from "./assets/road-trip-car.png";
 import rajasthanCamelTour from "./assets/rajasthan-desert-camel-tour.png";
@@ -7,7 +7,7 @@ import founderPortrait from "./assets/founder-portrait.png";
 import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
-import { PaymentTermsAcceptance } from "./PaymentTerms";
+import { LegalPolicyModal, PaymentTermsAcceptance } from "./PaymentTerms";
 import "./App.css";
 
 const images = {
@@ -479,6 +479,7 @@ function App() {
     <MultiDayToursPage
       go={go}
       mode={new URLSearchParams(query).get("mode") || ""}
+      category={new URLSearchParams(query).get("category") || ""}
       tours={tours}
     />
   ) : /^\/trips\/\d+$/.test(path) ? (
@@ -929,7 +930,7 @@ function Header({
                   {mumbaiToursOpen && (
                     <div className="nested-tour-dropdown">
                       <button onClick={() => selectTour("/tours?city=Mumbai")}>All Mumbai tours</button>
-                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Cultural")}>Mumbai community tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Community")}>Mumbai community tours</button>
                       <button onClick={() => selectTour("/tours?city=Mumbai&category=Sightseeing")}>Mumbai sightseeing tours</button>
                     </div>
                   )}
@@ -997,11 +998,11 @@ function Header({
             {tripsOpen && (
               <div className="trips-dropdown">
                 <button onClick={() => selectTrip("/trips")}>All multi-day tours</button>
-                <button onClick={() => selectTrip("/trips?mode=Shared")}>
-                  Shared tours
+                <button onClick={() => selectTrip("/trips?category=North%20India")}>
+                  North India tours
                 </button>
-                <button onClick={() => selectTrip("/trips?mode=Private")}>
-                  Private tours
+                <button onClick={() => selectTrip("/trips?category=South%20India")}>
+                  South India tours
                 </button>
               </div>
             )}
@@ -1092,7 +1093,7 @@ function Header({
             </button>
             <button
               className="trip-option nested-trip-option"
-              onClick={() => mobileNavigate("/tours?city=Mumbai&category=Cultural")}
+              onClick={() => mobileNavigate("/tours?city=Mumbai&category=Community")}
             >
               Mumbai community tours
             </button>
@@ -1128,22 +1129,22 @@ function Header({
             </button>
             <span>Multi-day Tours</span>
             <button
-              className={path === "/trips" && !new URLSearchParams(query).get("mode") ? "active trip-option" : "trip-option"}
+              className={path === "/trips" && !new URLSearchParams(query).get("mode") && !new URLSearchParams(query).get("category") ? "active trip-option" : "trip-option"}
               onClick={() => mobileNavigate("/trips")}
             >
               All multi-day tours
             </button>
             <button
-              className={new URLSearchParams(query).get("mode") === "Shared" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
-              onClick={() => mobileNavigate("/trips?mode=Shared")}
+              className={new URLSearchParams(query).get("category") === "North India" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
+              onClick={() => mobileNavigate("/trips?category=North%20India")}
             >
-              Shared tours
+              North India tours
             </button>
             <button
-              className={new URLSearchParams(query).get("mode") === "Private" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
-              onClick={() => mobileNavigate("/trips?mode=Private")}
+              className={new URLSearchParams(query).get("category") === "South India" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
+              onClick={() => mobileNavigate("/trips?category=South%20India")}
             >
-              Private tours
+              South India tours
             </button>
             <button
               className={path === "/contact" && new URLSearchParams(query).get("intent") === "custom" ? "active trip-option" : "trip-option"}
@@ -1330,6 +1331,61 @@ function OfferCountdown({ seconds, onClose }) {
         </strong>
       </div>
     </aside>
+  );
+}
+
+function TravellerReviewCard({ review }) {
+  const rating = Math.max(0, Math.min(5, Number(review.rating) || 0));
+  const initials = (review.name || "Guest")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((name) => name[0])
+    .join("")
+    .toUpperCase();
+  const reviewCopy = review.review_point || review.review || review.text || "";
+
+  return (
+    <blockquote className="home-review-card">
+      <div className="home-review-topline">
+        <span className="home-review-avatar" aria-hidden="true">{initials}</span>
+        <span className="home-review-rating" aria-label={`${rating.toFixed(1)} out of 5`}>
+          <span className="home-review-rating-dots" aria-hidden="true">
+            {Array.from({ length: 5 }, (_, index) => (
+              <i className={index < Math.round(rating) ? "is-filled" : ""} key={index} />
+            ))}
+          </span>
+          <b>{rating.toFixed(1)}</b>
+        </span>
+      </div>
+      {review.review_heading && <h3 className="home-review-heading">{review.review_heading}</h3>}
+      <p className={`home-review-copy${review.link ? "" : " home-review-copy-full"}`}>{reviewCopy}</p>
+      {review.link && (
+        <a className="home-review-read-more" href={review.link} target="_blank" rel="noreferrer">
+          Read more
+        </a>
+      )}
+      <div className="home-review-scores" aria-label="Review category ratings out of 5">
+        <span>Guide <b>{review.guide_rating}</b></span>
+        <span>Meeting or pickup <b>{review.meeting_or_pickup_rating}</b></span>
+        <span>Value for money <b>{review.value_for_money_rating}</b></span>
+      </div>
+      <footer className="home-review-footer">
+        <span className="home-review-author">
+          <span className="home-review-avatar home-review-avatar-small" aria-hidden="true">{initials}</span>
+          <span className="home-review-byline">
+            <b>{review.name}</b>
+            {review.date && <small>{review.date}</small>}
+          </span>
+        </span>
+        {review.link && (
+          <a className="home-review-source" href={review.link} target="_blank" rel="noreferrer">
+            {review.source || "Review site"} <span aria-hidden="true">↗</span>
+          </a>
+        )}
+        {!review.link && review.source && <span className="home-review-source">{review.source}</span>}
+      </footer>
+    </blockquote>
   );
 }
 
@@ -1664,59 +1720,9 @@ function Home({ go, carouselTours = [], homeReviews = [] }) {
           <Eyebrow>Traveller stories</Eyebrow>
           <h2>Loved by curious travellers.</h2>
           <div className="quote-grid">
-            {homeReviews.slice(0, 3).map((review) => {
-              const rating = Math.max(0, Math.min(5, Number(review.rating) || 0));
-              const initials = (review.name || "Guest")
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((name) => name[0])
-                .join("")
-                .toUpperCase();
-
-              return (
-                <blockquote className="home-review-card" key={review.id}>
-                  <div className="home-review-topline">
-                    <span className="home-review-avatar" aria-hidden="true">{initials}</span>
-                    <span className="home-review-rating" aria-label={`${rating.toFixed(1)} out of 5`}>
-                      <span className="home-review-rating-dots" aria-hidden="true">
-                        {Array.from({ length: 5 }, (_, index) => (
-                          <i className={index < Math.round(rating) ? "is-filled" : ""} key={index} />
-                        ))}
-                      </span>
-                      <b>{rating.toFixed(1)}</b>
-                    </span>
-                  </div>
-                  {review.review_heading && <h3 className="home-review-heading">{review.review_heading}</h3>}
-                  <p className={`home-review-copy${review.link ? "" : " home-review-copy-full"}`}>{review.review_point}</p>
-                  {review.link && (
-                    <a className="home-review-read-more" href={review.link} target="_blank" rel="noreferrer">
-                      Read more
-                    </a>
-                  )}
-                  <div className="home-review-scores" aria-label="Review category ratings out of 5">
-                    <span>Guide <b>{review.guide_rating}</b></span>
-                    <span>Meeting or pickup <b>{review.meeting_or_pickup_rating}</b></span>
-                    <span>Value for money <b>{review.value_for_money_rating}</b></span>
-                  </div>
-                  <footer className="home-review-footer">
-                    <span className="home-review-author">
-                      <span className="home-review-avatar home-review-avatar-small" aria-hidden="true">{initials}</span>
-                      <span className="home-review-byline">
-                        <b>{review.name}</b>
-                        {review.date && <small>{review.date}</small>}
-                      </span>
-                    </span>
-                    {review.link && (
-                      <a className="home-review-source" href={review.link} target="_blank" rel="noreferrer">
-                        {review.source || "Review site"} <span aria-hidden="true">↗</span>
-                      </a>
-                    )}
-                    {!review.link && review.source && <span className="home-review-source">{review.source}</span>}
-                  </footer>
-                </blockquote>
-              );
-            })}
+            {homeReviews.slice(0, 3).map((review) => (
+              <TravellerReviewCard key={review.id} review={review} />
+            ))}
           </div>
         </section>
       )}
@@ -2223,7 +2229,7 @@ function ToursV3({
             !isMultiDayTour(item) &&
             (!city || item.city === city) &&
             (!selectedCategory || item.category === selectedCategory) &&
-            (!selectedMode || item.mode === selectedMode),
+            (!selectedMode || getTourAvailableModes(item).includes(selectedMode)),
           );
           setResults({ items: fallback, total: fallback.length });
         }
@@ -2233,7 +2239,7 @@ function ToursV3({
           !isMultiDayTour(item) &&
           (!city || item.city === city) &&
           (!selectedCategory || item.category === selectedCategory) &&
-          (!selectedMode || item.mode === selectedMode),
+          (!selectedMode || getTourAvailableModes(item).includes(selectedMode)),
         );
         setResults({ items: fallback, total: fallback.length });
       })
@@ -2380,10 +2386,33 @@ function ToursV3({
   );
 }
 
-function MultiDayToursPage({ go, mode = "", tours = [] }) {
+function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const selectedMode = ["Shared", "Private"].includes(mode) ? mode : "";
+  const selectedRegion = ["North India", "South India"].includes(category)
+    ? category
+    : "";
+  const fallbackTours = useMemo(
+    () =>
+      tours.filter((item) => {
+        const tourCategories = [
+          item.category,
+          ...(Array.isArray(item.categories) ? item.categories : []),
+        ];
+        return (
+          isMultiDayTour(item) &&
+          (!selectedMode || item.mode === selectedMode) &&
+          (!selectedRegion ||
+            tourCategories.some(
+              (itemCategory) =>
+                String(itemCategory || "").toLowerCase() ===
+                selectedRegion.toLowerCase(),
+            ))
+        );
+      }),
+    [selectedMode, selectedRegion, tours],
+  );
   const heroImage = images.rajasthanCamelTour;
   useEffect(() => {
     setLoading(true);
@@ -2393,6 +2422,7 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
       page_size: "100",
     });
     if (selectedMode) parameters.set("mode", selectedMode);
+    if (selectedRegion) parameters.set("category", selectedRegion);
     fetch(`${apiBaseUrl}/api/tours?${parameters}`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) => {
@@ -2401,23 +2431,13 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
           setResults({ items: apiItems, total: data.total });
           return;
         }
-        const fallback = tours.filter(
-          (item) =>
-            isMultiDayTour(item) &&
-            (!selectedMode || item.mode === selectedMode),
-        );
-        setResults({ items: fallback, total: fallback.length });
+        setResults({ items: fallbackTours, total: fallbackTours.length });
       })
       .catch(() => {
-        const fallback = tours.filter(
-          (item) =>
-            isMultiDayTour(item) &&
-            (!selectedMode || item.mode === selectedMode),
-        );
-        setResults({ items: fallback, total: fallback.length });
+        setResults({ items: fallbackTours, total: fallbackTours.length });
       })
       .finally(() => setLoading(false));
-  }, [selectedMode, tours]);
+  }, [fallbackTours, selectedMode, selectedRegion]);
   return (
     <main className="top-space multi-day-page">
       <section
@@ -2430,14 +2450,18 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
         </div>
       </section>
       <section className="section multi-day-intro">
-        <Eyebrow>{selectedMode ? `${selectedMode} journeys` : "Travel deeper"}</Eyebrow>
+        <Eyebrow>{selectedRegion || (selectedMode ? `${selectedMode} journeys` : "Travel deeper")}</Eyebrow>
         <h2>
-          {selectedMode
+          {selectedRegion
+            ? `${selectedRegion} multi-day tours`
+            : selectedMode
             ? `${selectedMode} multi-day tours`
             : "More time for the stories that matter"}
         </h2>
         <p className="lead">
-          {selectedMode
+          {selectedRegion
+            ? `Explore the places, stories and local experiences that make ${selectedRegion} unforgettable.`
+            : selectedMode
             ? `Travel with the ease of a ${selectedMode.toLowerCase()} group, with thoughtful pacing, local guides and room to experience each destination properly.`
             : "Take the scenic route through India with thoughtfully planned journeys, local hosts and the freedom to experience more than one destination in a day."}
         </p>
@@ -2445,20 +2469,20 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
       <section className="section multi-day-results">
         <div className="section-heading split-heading">
           <div>
-            <Eyebrow>{selectedMode || "Shared & private"} multi-day tours</Eyebrow>
-            <h2>{selectedMode ? `${selectedMode} tours` : "Choose your way to travel"}</h2>
+            <Eyebrow>{selectedRegion || selectedMode || "North & South India"} multi-day tours</Eyebrow>
+            <h2>{selectedRegion ? `${selectedRegion} tours` : selectedMode ? `${selectedMode} tours` : "Explore by region"}</h2>
           </div>
           <label className="experience-filter-select multi-day-filter-select">
             <span className="sr-only">Filter multi-day tours</span>
             <select
-              value={selectedMode}
+              value={selectedRegion}
               onChange={(event) =>
-                go(event.target.value ? `/trips?mode=${event.target.value}` : "/trips")
+                go(event.target.value ? `/trips?category=${encodeURIComponent(event.target.value)}` : "/trips")
               }
             >
               <option value="">All multi-day tours</option>
-              <option value="Shared">Shared tours</option>
-              <option value="Private">Private tours</option>
+              <option value="North India">North India tours</option>
+              <option value="South India">South India tours</option>
             </select>
           </label>
         </div>
@@ -2507,7 +2531,7 @@ function MultiDayToursPage({ go, mode = "", tours = [] }) {
           </div>
         ) : (
           <div className="admin-empty trip-empty">
-            <h2>No {selectedMode ? selectedMode.toLowerCase() : "shared or private"} multi-day tours yet</h2>
+            <h2>No {(selectedRegion || selectedMode || "North or South India").toLowerCase()} multi-day tours yet</h2>
             <p>Tell us where you want to go and we will shape a longer journey around you.</p>
             <button className="outline-button" onClick={() => go("/contact?intent=custom")}>Plan Your Trip</button>
           </div>
@@ -3862,6 +3886,12 @@ function TourDetail({
   const [bookingOpen, setBookingOpen] = useState(
     initialBooking && Boolean(session?.token),
   );
+  const [durationOptionId, setDurationOptionId] = useState(() =>
+    new URLSearchParams(window.location.search).get("duration_option_id"),
+  );
+  const [bookingMode, setBookingMode] = useState(() =>
+    new URLSearchParams(window.location.search).get("booking_mode") || "Shared",
+  );
 
   useEffect(() => {
     let active = true;
@@ -3899,11 +3929,45 @@ function TourDetail({
     };
   }, [tourId, city, category]);
 
+  const durationOptions = getTourDurationOptions(tour);
+  const durationOptionIdsKey = durationOptions.map((option) => option.id).join(",");
+  useEffect(() => {
+    if (!tour) return;
+    const optionIds = durationOptionIdsKey
+      ? durationOptionIdsKey.split(",")
+      : [];
+    if (!optionIds.includes(durationOptionId)) {
+      setDurationOptionId(optionIds[0] || "default");
+    }
+  }, [durationOptionId, durationOptionIdsKey, tour]);
+
+  const bookingPrices = getTourBookingPrices(tour, durationOptionId);
+  const availableBookingModes = bookingPrices.availableModes;
+  const availableBookingModesKey = availableBookingModes.join(",");
+  const selectedBookingMode = availableBookingModes.includes(bookingMode)
+    ? bookingMode
+    : availableBookingModes[0] || "Shared";
+
+  useEffect(() => {
+    if (!tour) return;
+    const modes = availableBookingModesKey
+      ? availableBookingModesKey.split(",")
+      : ["Shared"];
+    setBookingMode((currentMode) =>
+      modes.includes(currentMode) ? currentMode : modes[0],
+    );
+  }, [availableBookingModesKey, tour]);
+
   const closeBooking = () => {
     setBookingOpen(false);
     const destination = new URL(window.location.href);
-    if (destination.searchParams.has("booking")) {
+    if (
+      destination.searchParams.has("booking") ||
+      destination.searchParams.has("booking_mode")
+    ) {
       destination.searchParams.delete("booking");
+      destination.searchParams.delete("booking_mode");
+      destination.searchParams.delete("duration_option_id");
       window.history.replaceState(
         {},
         "",
@@ -3915,6 +3979,10 @@ function TourDetail({
     if (!session?.token) {
       const destination = new URL(window.location.href);
       destination.searchParams.set("booking", "1");
+      if (durationOptionId) {
+        destination.searchParams.set("duration_option_id", durationOptionId);
+      }
+      destination.searchParams.set("booking_mode", selectedBookingMode);
       go(`${destination.pathname}${destination.search}${destination.hash}`);
       return;
     }
@@ -3957,39 +4025,78 @@ function TourDetail({
     (item) => item?.question || item?.answer,
   );
   const highlights = normalizeTourHighlights(tour.highlights);
-  const bookingPrices = getTourBookingPrices(tour);
-  const price = Number(tour.price_value ?? tour.price);
-  const privatePrice = Number(tour.private_price);
+  const selectedDurationOption = getTourDurationOption(tour, durationOptionId);
+  const bookingModeLabel = availableBookingModes.length === 2
+    ? "Shared & private"
+    : availableBookingModes[0] || tour.mode;
+  const sharedPrice = bookingPrices.shared;
+  const privatePrice = bookingPrices.private;
+  const selectedBookingPrice = selectedBookingMode === "Private"
+    ? privatePrice
+    : sharedPrice;
+  const selectedBookingTierCount = selectedBookingMode === "Private"
+    ? bookingPrices.privateTiers.length
+    : bookingPrices.sharedTiers.length;
   const groupPriceTables = [
-    {
+    availableBookingModes.includes("Shared") && {
       label: "Shared tour",
       tiers: bookingPrices.sharedTiers,
     },
-    {
+    availableBookingModes.includes("Private") && {
       label: "Private tour",
       tiers: bookingPrices.privateTiers,
     },
-  ].filter((table) => table.tiers.length > 0);
+  ].filter((table) => table?.tiers?.length > 0);
+  const hasMultipleDurations = durationOptions.length > 1;
+  const pricingByDuration = durationOptions.map((option) => ({
+    option,
+    prices: getTourBookingPrices(tour, option.id),
+  }));
+  const durationPriceRows = ["Shared", "Private"].flatMap((mode) =>
+    pricingByDuration.map(({ option, prices }) => {
+      const tiers = mode === "Private" ? prices.privateTiers : prices.sharedTiers;
+      const value = mode === "Private" ? prices.private : prices.shared;
+      if (!prices.availableModes.includes(mode) || value <= 0) return null;
+      return {
+        key: `${option.id}-${mode.toLowerCase()}`,
+        duration: option.duration,
+        label: option.duration,
+        mode,
+        value,
+        from: tiers.length > 0,
+        tiers,
+      };
+    }).filter(Boolean),
+  );
+  const durationGroupPriceTables = durationPriceRows
+    .filter((row) => row.tiers.length > 0)
+    .map((row) => ({
+      key: `${row.key}-prices`,
+      duration: row.duration,
+      label: `${row.mode} tour`,
+      tiers: row.tiers,
+    }));
   const pricedGroupSizes = groupPriceTables.flatMap((table) =>
     table.tiers.map((tier) => Number(tier.travellers)),
   );
   const groupSizeLimit =
     Math.max(0, ...pricedGroupSizes) || Number(tour.capacity) || 6;
-  const hasPrivateTourOption = Boolean(
-    bookingPrices.privateTiers.length ||
-      (Number.isFinite(privatePrice) && privatePrice > 0) ||
-      tour.mode === "Private",
-  );
-  const priceRows = [
-    Number.isFinite(price) && price > 0 && {
-      label: bookingPrices.sharedTiers.length ? "Shared tour · from" : "Shared tour",
-      value: price,
-    },
-    Number.isFinite(privatePrice) && privatePrice > 0 && {
-      label: bookingPrices.privateTiers.length ? "Private tour · from" : "Private tour",
-      value: privatePrice,
-    },
-  ].filter(Boolean);
+  const hasPrivateTourOption = availableBookingModes.includes("Private");
+  const priceRows = hasMultipleDurations
+    ? durationPriceRows
+    : [
+        availableBookingModes.includes("Shared") && sharedPrice > 0 && {
+          label: bookingPrices.sharedTiers.length ? "Shared tour · from" : "Shared tour",
+          value: sharedPrice,
+        },
+        availableBookingModes.includes("Private") && privatePrice > 0 && {
+          label: bookingPrices.privateTiers.length ? "Private tour · from" : "Private tour",
+          value: privatePrice,
+        },
+      ].filter(Boolean);
+  const displayedGroupPriceTables = hasMultipleDurations
+    ? durationGroupPriceTables
+    : groupPriceTables;
   const hasPriceAndInclusions = priceRows.length || inclusions.length || tour.inclusion_groups?.length;
   const legacyMeetingLocation = {
     start_meeting_point: tour.start_meeting_point || "",
@@ -4050,10 +4157,10 @@ function TourDetail({
         <div className="hero-content">
           {(tour.city || tour.category) && <Eyebrow>{[tour.city, tour.category].filter(Boolean).join(" · ")}</Eyebrow>}
           <div className="hero-facts">
-            {tour.duration && <span>{tour.duration}</span>}
+            {(selectedDurationOption?.duration || tour.duration) && <span>{selectedDurationOption?.duration || tour.duration}</span>}
             {tour.time_slots?.length > 0 && <span>{tour.time_slots.map(formatTourTime).join(" · ")}</span>}
             {!tour.time_slots?.length && tour.start_time && <span>{formatTourTime(tour.start_time)}</span>}
-            {tour.mode && <span>{tour.mode}</span>}
+            {bookingModeLabel && <span>{bookingModeLabel}</span>}
             {tour.trip_type && <span>{tour.trip_type}</span>}
           </div>
         </div>
@@ -4075,14 +4182,59 @@ function TourDetail({
           )}
         </div>
         <aside className="booking-card">
-          {tour.mode && <span>{tour.mode} tour</span>}
-          {priceRows[0] && (
+          {bookingModeLabel && <span>{bookingModeLabel} tour</span>}
+          {durationOptions.length > 1 && (
+            <div className="booking-card-duration-picker">
+              <b>Choose a duration</b>
+              <div>
+                {durationOptions.map((option) => (
+                  <button
+                    className={durationOptionId === option.id ? "is-selected" : ""}
+                    type="button"
+                    key={option.id}
+                    onClick={() => setDurationOptionId(option.id)}
+                  >
+                    {option.duration}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {availableBookingModes.length > 1 && (
+            <div className="booking-card-mode-picker">
+              <b>Choose your tour style</b>
+              <div>
+                {availableBookingModes.map((mode) => (
+                  <button
+                    aria-pressed={selectedBookingMode === mode}
+                    className={selectedBookingMode === mode ? "is-selected" : ""}
+                    key={mode}
+                    type="button"
+                    onClick={() => setBookingMode(mode)}
+                  >
+                    <b>{mode} tour</b>
+                    <small>
+                      {mode === "Shared"
+                        ? "Join a small group"
+                        : "Just for your group"}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedBookingPrice > 0 && (
             <div className="price">
-              <small>Price</small>
-              <b className="booking-price-by-mode">{formatInr(priceRows[0].value)}</b>
+              <small>
+                {selectedBookingMode} tour{selectedBookingTierCount ? " · from" : ""}
+              </small>
+              <b className="booking-price-by-mode">{formatInr(selectedBookingPrice)}</b>
               <span>per person</span>
             </div>
           )}
+          <button className="primary-button booking-card-cta" onClick={openBooking}>
+            Book this tour →
+          </button>
           {inclusions.length > 0 && <ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul>}
           <div className="tour-booking-notes">
             <p>
@@ -4096,21 +4248,24 @@ function TourDetail({
               </p>
             )}
           </div>
-          <button className="primary-button" onClick={openBooking}>Book this tour →</button>
         </aside>
       </section>
-      {bookingOpen && <BookingRequestModal tour={tour} session={session} prices={bookingPrices} onClose={closeBooking} />}
+      {bookingOpen && <BookingRequestModal tour={tour} session={session} prices={bookingPrices} initialDurationOptionId={durationOptionId} initialBookingMode={selectedBookingMode} onClose={closeBooking} />}
 
       {hasPriceAndInclusions && (
         <section className="section tour-reference-section" id="price-inclusions">
           <Eyebrow>Price & inclusions</Eyebrow>
           <h2>Tour details</h2>
-          {priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.label}><div><h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
-          {groupPriceTables.length > 0 && (
-            <div className="tour-group-price-tables">
-              {groupPriceTables.map((table) => (
-                <article key={table.label}>
-                  <h3>{table.label} prices</h3>
+          {hasMultipleDurations && (
+            <p className="tour-selected-duration">Compare prices for each available duration.</p>
+          )}
+          {priceRows.length > 0 && <div className={`tour-price-grid${hasMultipleDurations ? " tour-duration-price-grid" : ""}`}>{priceRows.map((item) => <article key={item.key || item.label}><div>{item.duration && <span className="tour-price-mode">{item.mode} tour{item.from ? " · from" : ""}</span>}<h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
+          {displayedGroupPriceTables.length > 0 && (
+            <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
+              {displayedGroupPriceTables.map((table) => (
+                <article key={table.key || table.label}>
+                  {table.duration && <span className="tour-price-mode">{table.label} prices</span>}
+                  <h3>{table.duration || `${table.label} prices`}</h3>
                   <div className="tour-group-price-table">
                     <div><b>Travellers</b><b>Price per person</b></div>
                     {table.tiers.map((tier) => (
@@ -4155,7 +4310,12 @@ function TourDetail({
         <section className="section tour-reference-section tour-meeting" id="meeting-details">
           <Eyebrow>Meeting details</Eyebrow>
           <h2>Where to meet</h2>
-          {tour.meeting_details && <p className="lead">{tour.meeting_details}</p>}
+          {tour.meeting_details && (
+            <div className="tour-meeting-details">
+              <span className="material-symbols-outlined" aria-hidden="true">info</span>
+              <p>{tour.meeting_details}</p>
+            </div>
+          )}
           {routeMapEmbedUrl && (
             <div className="tour-map-embed">
               <iframe
@@ -4231,40 +4391,8 @@ function TourDetail({
         <section className="section tour-reference-section tour-reviews" id="tour-reviews">
           <Eyebrow>Guest experiences</Eyebrow>
           <h2>What travellers say</h2>
-          <div className="tour-reviews-grid">
-            {reviews.map((item) => (
-              <article className="tour-review-card" key={item.id}>
-                <div className="tour-review-author">
-                  <span className="tour-review-avatar" aria-hidden="true">
-                    {item.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
-                  </span>
-                  <p>
-                    <strong>{item.name}</strong>
-                    <span>wrote a review{item.date ? ` ${item.date}` : ""}</span>
-                  </p>
-                </div>
-                <span className="tour-review-score" aria-label={`${item.rating} out of 5`}>
-                  {item.rating}<small>/ 5</small>
-                </span>
-                {item.review_heading && <h3 className="tour-review-heading">{item.review_heading}</h3>}
-                <p className="tour-review-copy">{item.review}</p>
-                <div className="tour-review-ratings" aria-label="Review category ratings out of 5">
-                  <div><span>Value for money</span><strong>{item.value_for_money_rating}</strong></div>
-                  <div><span>Guide</span><strong>{item.guide_rating}</strong></div>
-                  <div><span>Meeting or pickup</span><strong>{item.meeting_or_pickup_rating}</strong></div>
-                </div>
-                {(item.source || item.link) && (
-                  <div className="tour-review-meta">
-                    {item.source && <span>Source: {item.source}</span>}
-                    {item.link && (
-                      <a href={item.link} target="_blank" rel="noreferrer">
-                        View on {item.source || "review site"} →
-                      </a>
-                    )}
-                  </div>
-                )}
-              </article>
-            ))}
+          <div className="quote-grid tour-reviews-grid">
+            {reviews.map((item) => <TravellerReviewCard key={item.id} review={item} />)}
           </div>
         </section>
       )}
@@ -4567,9 +4695,30 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
   );
 }
 
-function getTourAvailableModes(tour) {
-  const configuredModes = Array.isArray(tour?.pricing?.available_modes)
-    ? tour.pricing.available_modes
+function normalizeTourPricingTiers(tiers) {
+  return Array.isArray(tiers)
+    ? tiers
+        .map((tier) => ({
+          travellers: Number(tier?.travellers),
+          price_per_person: Number(tier?.price_per_person),
+        }))
+        .filter(
+          (tier) =>
+            Number.isInteger(tier.travellers) &&
+            tier.travellers > 0 &&
+            Number.isFinite(tier.price_per_person) &&
+            tier.price_per_person > 0,
+        )
+        .sort((left, right) => left.travellers - right.travellers)
+    : [];
+}
+
+function getTourAvailableModes(tour, pricingOverride = null) {
+  const pricing = pricingOverride && typeof pricingOverride === "object"
+    ? pricingOverride
+    : tour?.pricing || {};
+  const configuredModes = Array.isArray(pricing.available_modes)
+    ? pricing.available_modes
     : [];
   const availableModes = ["Shared", "Private"].filter((mode) =>
     configuredModes.includes(mode),
@@ -4583,49 +4732,111 @@ function getTourAvailableModes(tour) {
 
   const hasLegacyPrivatePricing = Boolean(
     Number(tour?.private_price) > 0 ||
-      (Array.isArray(tour?.pricing?.private_tiers) && tour.pricing.private_tiers.length),
+      (Array.isArray(pricing.private_tiers) && pricing.private_tiers.length),
   );
   return hasLegacyPrivatePricing ? ["Shared", "Private"] : ["Shared"];
 }
 
-function getTourBookingPrices(tour) {
+function getTourDurationOptions(tour) {
+  const rawOptions = Array.isArray(tour?.pricing?.duration_options)
+    ? tour.pricing.duration_options
+    : [];
+  const durationOptions = rawOptions
+    .map((option) => {
+      const id = typeof option?.id === "string" ? option.id.trim() : "";
+      const duration = typeof option?.duration === "string"
+        ? option.duration.trim()
+        : "";
+      if (!id || !duration) return null;
+      return {
+        id,
+        duration,
+        pricing: option,
+        availableModes: getTourAvailableModes(tour, option),
+        legacy: false,
+      };
+    })
+    .filter(Boolean);
+  if (durationOptions.length) return durationOptions;
+
   const pricing = tour?.pricing || {};
-  const normalizeTiers = (tiers) =>
-    Array.isArray(tiers)
-      ? tiers
-          .map((tier) => ({
-            travellers: Number(tier?.travellers),
-            price_per_person: Number(tier?.price_per_person),
-          }))
-          .filter(
-            (tier) =>
-              Number.isInteger(tier.travellers) &&
-              tier.travellers > 0 &&
-              Number.isFinite(tier.price_per_person) &&
-              tier.price_per_person > 0,
-          )
-          .sort((left, right) => left.travellers - right.travellers)
-      : [];
-  const sharedTiers = normalizeTiers(pricing.shared_tiers);
-  const privateTiers = normalizeTiers(pricing.private_tiers);
+  return [{
+    id: "default",
+    duration: String(tour?.duration || "").trim(),
+    pricing,
+    availableModes: getTourAvailableModes(tour, pricing),
+    legacy: true,
+  }];
+}
+
+function getTourDurationOption(tour, durationOptionId) {
+  const durationOptions = getTourDurationOptions(tour);
+  return durationOptions.find((option) => option.id === durationOptionId) ||
+    durationOptions[0] ||
+    null;
+}
+
+function getTourBookingPrices(tour, durationOptionId = null) {
+  const durationOption = getTourDurationOption(tour, durationOptionId);
+  const pricing = durationOption?.pricing || tour?.pricing || {};
+  const sharedTiers = normalizeTourPricingTiers(pricing.shared_tiers);
+  const privateTiers = normalizeTourPricingTiers(pricing.private_tiers);
   const minimumTierPrice = (tiers) =>
     tiers.length ? Math.min(...tiers.map((tier) => tier.price_per_person)) : 0;
-  const basePrice = Number(tour?.price_value ?? tour?.price) || 0;
-  const availableModes = getTourAvailableModes(tour);
+  const basePrice = durationOption?.legacy
+    ? Number(tour?.price_value ?? tour?.price) || 0
+    : 0;
+  const availableModes = durationOption?.availableModes?.length
+    ? durationOption.availableModes
+    : getTourAvailableModes(tour, pricing);
   const sharedPrice = availableModes.includes("Shared")
     ? minimumTierPrice(sharedTiers) || basePrice
     : 0;
   const privatePrice = availableModes.includes("Private")
-    ? minimumTierPrice(privateTiers) || Number(tour?.private_price) ||
-      (tour?.mode === "Private" ? basePrice : 0)
+    ? minimumTierPrice(privateTiers) ||
+      (durationOption?.legacy ? Number(tour?.private_price) : 0) ||
+      (durationOption?.legacy && tour?.mode === "Private" ? basePrice : 0)
     : 0;
   return {
+    durationOption,
     availableModes,
     shared: sharedPrice,
     private: privatePrice,
     sharedTiers,
     privateTiers,
   };
+}
+
+function createDurationOptionId() {
+  return `duration-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getTourEditorDurationOptions(tour) {
+  return getTourDurationOptions(tour).map((option) => {
+    const sharedTiers = normalizeTourPricingTiers(option.pricing?.shared_tiers);
+    const privateTiers = normalizeTourPricingTiers(option.pricing?.private_tiers);
+    return {
+      id: option.legacy ? createDurationOptionId() : option.id,
+      duration: option.duration || "",
+      pricing_modes: option.availableModes.length
+        ? option.availableModes
+        : ["Shared"],
+      shared_pricing_tiers: sharedTiers.length
+        ? sharedTiers
+        : [{
+            travellers: 1,
+            price_per_person: option.legacy ? tour?.price || "" : "",
+          }],
+      private_pricing_tiers: privateTiers.length
+        ? privateTiers
+        : [{
+            travellers: 1,
+            price_per_person: option.legacy
+              ? tour?.private_price || tour?.price || ""
+              : "",
+          }],
+    };
+  });
 }
 
 function getTourBookingPrice(prices, bookingMode, travellers) {
@@ -4639,8 +4850,31 @@ function getTourBookingPrice(prices, bookingMode, travellers) {
   );
 }
 
-function BookingRequestModal({ tour, title, session, prices, onClose }) {
-  const [bookingMode, setBookingMode] = useState("Shared");
+function BookingRequestModal({
+  tour,
+  title,
+  session,
+  prices,
+  initialDurationOptionId = null,
+  initialBookingMode = null,
+  onClose,
+}) {
+  const durationOptions = getTourDurationOptions(tour);
+  const durationOptionsKey = durationOptions.map((option) => option.id).join(",");
+  const [durationOptionId, setDurationOptionId] = useState(
+    () => initialDurationOptionId || durationOptions[0]?.id || "default",
+  );
+  const selectedDurationOption = getTourDurationOption(tour, durationOptionId);
+  const selectedPrices = tour
+    ? getTourBookingPrices(tour, durationOptionId)
+    : prices;
+  const availableBookingModes = selectedPrices?.availableModes?.length
+    ? selectedPrices.availableModes
+    : getTourAvailableModes(tour);
+  const availableBookingModesKey = availableBookingModes.join(",");
+  const [bookingMode, setBookingMode] = useState(
+    () => initialBookingMode || availableBookingModes[0] || "Shared",
+  );
   const [travellers, setTravellers] = useState(2);
   const [travellerDetails, setTravellerDetails] = useState({
     name: "",
@@ -4670,9 +4904,9 @@ function BookingRequestModal({ tour, title, session, prices, onClose }) {
   const pricingTiers = useMemo(
     () =>
       bookingMode === "Private"
-        ? prices?.privateTiers || []
-        : prices?.sharedTiers || [],
-    [bookingMode, prices?.privateTiers, prices?.sharedTiers],
+        ? selectedPrices?.privateTiers || []
+        : selectedPrices?.sharedTiers || [],
+    [bookingMode, selectedPrices?.privateTiers, selectedPrices?.sharedTiers],
   );
   const travellerOptions = useMemo(
     () =>
@@ -4688,10 +4922,24 @@ function BookingRequestModal({ tour, title, session, prices, onClose }) {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(
     availableTimeSlots[0] || "",
   );
-  const unitPrice = getTourBookingPrice(prices, bookingMode, travellers);
+  const unitPrice = getTourBookingPrice(selectedPrices, bookingMode, travellers);
   const total = unitPrice * travellers;
   const selectedTourTitle = title || tour?.title || "Tour enquiry";
   const today = new Date().toISOString().slice(0, 10);
+  useEffect(() => {
+    const optionIds = durationOptionsKey
+      ? durationOptionsKey.split(",")
+      : [];
+    if (!optionIds.includes(durationOptionId)) {
+      setDurationOptionId(optionIds[0] || "default");
+    }
+  }, [durationOptionId, durationOptionsKey]);
+  useEffect(() => {
+    const modes = availableBookingModesKey
+      ? availableBookingModesKey.split(",")
+      : ["Shared"];
+    if (!modes.includes(bookingMode)) setBookingMode(modes[0]);
+  }, [availableBookingModesKey, bookingMode]);
   useEffect(() => {
     if (!travellerOptions.includes(travellers)) {
       setTravellers(travellerOptions[0] || 1);
@@ -4736,6 +4984,7 @@ function BookingRequestModal({ tour, title, session, prices, onClose }) {
     setStatus("");
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const requestDetails = [
+      selectedDurationOption?.duration && `Duration: ${selectedDurationOption.duration}`,
       `Tour style: ${bookingMode}`,
       `Preferred date: ${values.date}`,
       startTimeSlot && `Start time slot: ${startTimeSlot}`,
@@ -4757,6 +5006,8 @@ function BookingRequestModal({ tour, title, session, prices, onClose }) {
           tour_id: tour.id,
           travel_date: values.date,
           travellers,
+          booking_mode: bookingMode,
+          duration_option_id: selectedDurationOption?.id || undefined,
           contact_phone: values.phone,
           special_requests: `Guest: ${values.name}; Email: ${values.email}\n${requestDetails}`,
         }),
@@ -4917,17 +5168,36 @@ function BookingRequestModal({ tour, title, session, prices, onClose }) {
         ) : (
           <form className="booking-modal-form" onSubmit={submit}>
             <label>Selected tour<input value={selectedTourTitle} readOnly /></label>
-            <div className="booking-modal-style-picker">
-              <span>How would you like to travel?</span>
-              <div>
-                {["Shared", "Private"].map((option) => (
-                  <label className={bookingMode === option ? "selected" : ""} key={option}>
-                    <input name="booking_mode" type="radio" value={option} checked={bookingMode === option} onChange={() => setBookingMode(option)} />
-                    <span><b>{option} tour</b><small>{option === "Shared" ? "Join fellow travellers" : "Just your group"}</small></span>
-                  </label>
-                ))}
+            {durationOptions.length > 1 ? (
+              <div className="booking-modal-duration-picker">
+                <span>Choose a duration</span>
+                <div>
+                  {durationOptions.map((option) => (
+                    <label className={durationOptionId === option.id ? "selected" : ""} key={option.id}>
+                      <input name="duration_option_id" type="radio" value={option.id} checked={durationOptionId === option.id} onChange={() => setDurationOptionId(option.id)} />
+                      <b>{option.duration}</b>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <input name="duration_option_id" type="hidden" value={selectedDurationOption?.id || "default"} />
+            )}
+            {availableBookingModes.length > 1 ? (
+              <div className="booking-modal-style-picker">
+                <span>How would you like to travel?</span>
+                <div>
+                  {availableBookingModes.map((option) => (
+                    <label className={bookingMode === option ? "selected" : ""} key={option}>
+                      <input name="booking_mode" type="radio" value={option} checked={bookingMode === option} onChange={() => setBookingMode(option)} />
+                      <span><b>{option} tour</b><small>{option === "Shared" ? "Join fellow travellers" : "Just your group"}</small></span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <input name="booking_mode" type="hidden" value={bookingMode} />
+            )}
             <div className="form-row">
               <label>Preferred date<input name="date" required type="date" min={today} /></label>
               <label>Travellers<select name="travellers" value={travellers} onChange={(event) => setTravellers(Number(event.target.value))}>
@@ -5447,8 +5717,16 @@ function ContactFlowV2({ session }) {
         return;
       }
       try {
+        const durationOptionId = values.duration_option_id ||
+          getTourDurationOptions(tourDetails)[0]?.id ||
+          "default";
+        const durationOption = getTourDurationOption(tourDetails, durationOptionId);
+        const bookingMode = values.booking_mode ||
+          getTourBookingPrices(tourDetails, durationOptionId).availableModes[0] ||
+          "Shared";
         const specialRequests = [
-          `Tour style: ${values.tour_style || "shared"}`,
+          durationOption?.duration && `Duration: ${durationOption.duration}`,
+          `Tour style: ${bookingMode}`,
           values.message?.trim(),
         ]
           .filter(Boolean)
@@ -5464,6 +5742,8 @@ function ContactFlowV2({ session }) {
             tour_id: tourDetails.id,
             travel_date: values.date,
             travellers: Number(values.travellers),
+            booking_mode: bookingMode,
+            duration_option_id: durationOptionId,
             contact_phone: values.phone,
             special_requests: specialRequests,
           }),
@@ -5920,11 +6200,54 @@ function BookingExperiencePage({
 }) {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [travellers, setTravellers] = useState(2);
-  const [bookingMode, setBookingMode] = useState("Shared");
-  const bookingPrices = getTourBookingPrices(tour);
-  const price = bookingMode === "Private" ? bookingPrices.private : bookingPrices.shared;
+  const durationOptions = getTourDurationOptions(tour);
+  const durationOptionIdsKey = durationOptions.map((option) => option.id).join(",");
+  const [durationOptionId, setDurationOptionId] = useState(
+    () => durationOptions[0]?.id || "default",
+  );
+  const selectedDurationOption = getTourDurationOption(tour, durationOptionId);
+  const bookingPrices = getTourBookingPrices(tour, durationOptionId);
+  const availableBookingModes = bookingPrices.availableModes;
+  const bookingModeLabel = availableBookingModes.length === 2
+    ? "Shared & private"
+    : availableBookingModes[0] || tour?.mode;
+  const availableBookingModesKey = availableBookingModes.join(",");
+  const [bookingMode, setBookingMode] = useState(
+    () => availableBookingModes[0] || "Shared",
+  );
+  const pricingTiers = bookingMode === "Private"
+    ? bookingPrices.privateTiers
+    : bookingPrices.sharedTiers;
+  const travellerOptions = pricingTiers.length
+    ? pricingTiers.map((tier) => tier.travellers)
+    : Array.from(
+        { length: Math.min(Math.max(Number(tour?.capacity) || 6, 6), 20) },
+        (_, index) => index + 1,
+      );
+  const travellerOptionsKey = travellerOptions.join(",");
+  const price = getTourBookingPrice(bookingPrices, bookingMode, travellers);
   const total = price * travellers;
   const highlights = normalizeTourHighlights(tour?.highlights);
+  useEffect(() => {
+    const optionIds = durationOptionIdsKey
+      ? durationOptionIdsKey.split(",")
+      : [];
+    if (!optionIds.includes(durationOptionId)) {
+      setDurationOptionId(optionIds[0] || "default");
+    }
+  }, [durationOptionId, durationOptionIdsKey]);
+  useEffect(() => {
+    const modes = availableBookingModesKey ? availableBookingModesKey.split(",") : ["Shared"];
+    if (!modes.includes(bookingMode)) setBookingMode(modes[0]);
+  }, [availableBookingModesKey, bookingMode]);
+  useEffect(() => {
+    const options = travellerOptionsKey
+      ? travellerOptionsKey.split(",").map(Number)
+      : [1];
+    if (!options.includes(travellers)) {
+      setTravellers(options[0]);
+    }
+  }, [travellerOptionsKey, travellers]);
 
   return (
     <main className="top-space booking-experience-shell">
@@ -5969,8 +6292,8 @@ function BookingExperiencePage({
                   </button>
                 )}
                 <div className="booking-facts">
-                  <span><i className="material-symbols-outlined">schedule</i>{tour.duration}</span>
-                  <span><i className="material-symbols-outlined">directions_walk</i>{tour.mode}</span>
+                  <span><i className="material-symbols-outlined">schedule</i>{selectedDurationOption?.duration || tour.duration}</span>
+                  <span><i className="material-symbols-outlined">directions_walk</i>{bookingModeLabel}</span>
                   <span><i className="material-symbols-outlined">group</i>Up to {tour.capacity} guests</span>
                   <span><i className="material-symbols-outlined">person_pin_circle</i>{tour.guide_name || "Local expert guide"}</span>
                 </div>
@@ -6030,16 +6353,36 @@ function BookingExperiencePage({
           ) : (
           <form className="journey-form booking-reservation-form" onSubmit={onSubmit}>
             <label>Selected tour<input value={tour?.title || requestedTour || "Tour enquiry"} readOnly /></label>
-            <div className="booking-style-picker">
-              <span>How would you like to travel?</span>
-              <div>
-                <label><input name="tour_style" type="radio" value="shared" checked={bookingMode === "Shared"} onChange={() => setBookingMode("Shared")} /><b>Shared tour</b><small>Join fellow travellers</small></label>
-                <label><input name="tour_style" type="radio" value="private" checked={bookingMode === "Private"} onChange={() => setBookingMode("Private")} /><b>Private tour</b><small>Just your group</small></label>
+            {durationOptions.length > 1 ? (
+              <div className="booking-duration-picker">
+                <span>Choose a duration</span>
+                <div>
+                  {durationOptions.map((option) => (
+                    <label className={durationOptionId === option.id ? "selected" : ""} key={option.id}>
+                      <input name="duration_option_id" type="radio" value={option.id} checked={durationOptionId === option.id} onChange={() => setDurationOptionId(option.id)} />
+                      <b>{option.duration}</b>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <input name="duration_option_id" type="hidden" value={selectedDurationOption?.id || "default"} />
+            )}
+            {availableBookingModes.length > 1 ? (
+              <div className="booking-style-picker">
+                <span>How would you like to travel?</span>
+                <div>
+                  {availableBookingModes.map((option) => (
+                    <label key={option}><input name="booking_mode" type="radio" value={option} checked={bookingMode === option} onChange={() => setBookingMode(option)} /><b>{option} tour</b><small>{option === "Shared" ? "Join fellow travellers" : "Just your group"}</small></label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <input name="booking_mode" type="hidden" value={bookingMode} />
+            )}
             <div className="form-row">
               <label>Preferred date<input name="date" required type="date" /></label>
-              <label>Travellers<select name="travellers" value={travellers} onChange={(event) => setTravellers(Number(event.target.value))}><option value="1">1 traveller</option><option value="2">2 travellers</option><option value="3">3 travellers</option><option value="4">4 travellers</option><option value="5">5 travellers</option><option value="6">6 travellers</option></select></label>
+              <label>Travellers<select name="travellers" value={travellers} onChange={(event) => setTravellers(Number(event.target.value))}>{travellerOptions.map((count) => <option value={count} key={count}>{count} {count === 1 ? "traveller" : "travellers"}</option>)}</select></label>
             </div>
             <label>Your name<input name="name" required placeholder="Your full name" /></label>
             <div className="form-row">
@@ -6887,24 +7230,9 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     description: tour?.description || "",
     image_url: tour?.image_url || "",
     city: tour?.city || "Mumbai",
-    mode: ["Shared", "Private"].includes(tour?.mode) ? tour.mode : "Shared",
     trip_type: tour?.trip_type || "One-day trip",
     category: tour?.category || "",
-    duration: tour?.duration || "",
-    shared_pricing_tiers: (tour?.pricing?.shared_tiers?.length
-      ? tour.pricing.shared_tiers
-      : [{ travellers: 1, price_per_person: tour?.price || "" }]
-    ).map((tier) => ({
-      travellers: tier?.travellers || 1,
-      price_per_person: tier?.price_per_person || "",
-    })),
-    private_pricing_tiers: (tour?.pricing?.private_tiers?.length
-      ? tour.pricing.private_tiers
-      : [{ travellers: 1, price_per_person: tour?.private_price || tour?.price || "" }]
-    ).map((tier) => ({
-      travellers: tier?.travellers || 1,
-      price_per_person: tier?.price_per_person || "",
-    })),
+    duration_options: getTourEditorDurationOptions(tour),
     capacity: tour?.capacity || 20,
     schedule_type: tour?.schedule_type || "Specific date",
     departure_date: tour?.departure_date || "",
@@ -7044,35 +7372,102 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       ),
     }));
   };
-  const updatePricingTier = (field, index, tierField, value) => {
+  const updateDurationOption = (durationIndex, field, value) => {
     setForm((current) => ({
       ...current,
-      [field]: current[field].map((tier, tierIndex) =>
-        tierIndex === index ? { ...tier, [tierField]: value } : tier,
+      duration_options: current.duration_options.map((option, optionIndex) =>
+        optionIndex === durationIndex ? { ...option, [field]: value } : option,
       ),
     }));
   };
-  const addPricingTier = (field) => {
-    setForm((current) => {
-      const usedTravellerCounts = new Set(
-        current[field].map((tier) => Number(tier.travellers)),
-      );
-      let nextTravellerCount = 1;
-      while (usedTravellerCounts.has(nextTravellerCount)) nextTravellerCount += 1;
-      return {
-        ...current,
-        [field]: [
-          ...current[field],
-          { travellers: nextTravellerCount, price_per_person: "" },
-        ],
-      };
-    });
-  };
-  const removePricingTier = (field, index) => {
+  const updateDurationPricingTier = (
+    durationIndex,
+    field,
+    tierIndex,
+    tierField,
+    value,
+  ) => {
     setForm((current) => ({
       ...current,
-      [field]: current[field].filter((_, tierIndex) => tierIndex !== index),
+      duration_options: current.duration_options.map((option, optionIndex) =>
+        optionIndex === durationIndex
+          ? {
+              ...option,
+              [field]: option[field].map((tier, currentTierIndex) =>
+                currentTierIndex === tierIndex
+                  ? { ...tier, [tierField]: value }
+                  : tier,
+              ),
+            }
+          : option,
+      ),
     }));
+  };
+  const addDurationPricingTier = (durationIndex, field) => {
+    setForm((current) => ({
+      ...current,
+      duration_options: current.duration_options.map((option, optionIndex) => {
+        if (optionIndex !== durationIndex) return option;
+        const usedTravellerCounts = new Set(
+          option[field].map((tier) => Number(tier.travellers)),
+        );
+        let nextTravellerCount = 1;
+        while (usedTravellerCounts.has(nextTravellerCount)) nextTravellerCount += 1;
+        return {
+          ...option,
+          [field]: [
+            ...option[field],
+            { travellers: nextTravellerCount, price_per_person: "" },
+          ],
+        };
+      }),
+    }));
+  };
+  const removeDurationPricingTier = (durationIndex, field, tierIndex) => {
+    setForm((current) => ({
+      ...current,
+      duration_options: current.duration_options.map((option, optionIndex) =>
+        optionIndex === durationIndex
+          ? {
+              ...option,
+              [field]: option[field].filter(
+                (_, currentTierIndex) => currentTierIndex !== tierIndex,
+              ),
+            }
+          : option,
+      ),
+    }));
+  };
+  const updateDurationPricingModes = (durationIndex, pricingModes) => {
+    updateDurationOption(durationIndex, "pricing_modes", pricingModes);
+  };
+  const addDurationOption = () => {
+    setForm((current) => (
+      current.duration_options.length >= 12
+        ? current
+        : {
+            ...current,
+            duration_options: [...current.duration_options, {
+              id: createDurationOptionId(),
+              duration: "",
+              pricing_modes: ["Shared"],
+              shared_pricing_tiers: [{ travellers: 1, price_per_person: "" }],
+              private_pricing_tiers: [{ travellers: 1, price_per_person: "" }],
+            }],
+          }
+    ));
+  };
+  const removeDurationOption = (durationIndex) => {
+    setForm((current) => (
+      current.duration_options.length <= 1
+        ? current
+        : {
+            ...current,
+            duration_options: current.duration_options.filter(
+              (_, optionIndex) => optionIndex !== durationIndex,
+            ),
+          }
+    ));
   };
   const updateHighlight = (index, field, value) => {
     setForm((current) => ({
@@ -7180,8 +7575,6 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         travellers: Number(tier.travellers),
         price_per_person: Number(tier.price_per_person),
       }));
-    const sharedPricingTiers = normalizePricingTiers(form.shared_pricing_tiers);
-    const privatePricingTiers = normalizePricingTiers(form.private_pricing_tiers);
     const invalidPricingTier = (tiers) =>
       tiers.find(
         (tier) =>
@@ -7192,22 +7585,62 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       );
     const hasDuplicateTravellerCount = (tiers) =>
       new Set(tiers.map((tier) => tier.travellers)).size !== tiers.length;
-    const invalidSharedTier = invalidPricingTier(sharedPricingTiers);
-    const invalidPrivateTier = invalidPricingTier(privatePricingTiers);
-    if (invalidSharedTier || invalidPrivateTier) {
-      const invalidTier = invalidSharedTier || invalidPrivateTier;
-      const tourStyle = invalidSharedTier ? "Shared" : "Private";
-      setStatus(
-        `${tourStyle} tour price for ${invalidTier.travellers || "this"} ${invalidTier.travellers === 1 ? "person" : "people"} is required and must be greater than zero.`,
-      );
+    const durationOptions = form.duration_options.map((option) => ({
+      id: String(option.id || createDurationOptionId()).trim(),
+      duration: option.duration.trim(),
+      available_modes: ["Shared", "Private"].filter((mode) =>
+        option.pricing_modes.includes(mode),
+      ),
+      shared_tiers: option.pricing_modes.includes("Shared")
+        ? normalizePricingTiers(option.shared_pricing_tiers)
+        : [],
+      private_tiers: option.pricing_modes.includes("Private")
+        ? normalizePricingTiers(option.private_pricing_tiers)
+        : [],
+    }));
+    if (!durationOptions.length) {
+      setStatus("Add at least one duration before saving this tour.");
       return;
     }
-    if (
-      hasDuplicateTravellerCount(sharedPricingTiers) ||
-      hasDuplicateTravellerCount(privatePricingTiers)
-    ) {
-      setStatus("Each group size can be added only once for shared and private prices.");
-      return;
+    const seenDurations = new Set();
+    for (let index = 0; index < durationOptions.length; index += 1) {
+      const option = durationOptions[index];
+      const optionNumber = index + 1;
+      const normalizedDuration = option.duration.toLowerCase();
+      if (option.duration.length < 2) {
+        setStatus(`Duration ${optionNumber} needs a clear duration, such as 4 hours.`);
+        return;
+      }
+      if (seenDurations.has(normalizedDuration)) {
+        setStatus(`Duration ${optionNumber} duplicates another duration. Give each option a unique label.`);
+        return;
+      }
+      seenDurations.add(normalizedDuration);
+      if (!option.available_modes.length) {
+        setStatus(`Duration ${optionNumber}: choose Shared tour, Private tour, or Both.`);
+        return;
+      }
+      for (const [tourStyle, tiers] of [
+        ["Shared", option.shared_tiers],
+        ["Private", option.private_tiers],
+      ]) {
+        if (!option.available_modes.includes(tourStyle)) continue;
+        if (!tiers.length) {
+          setStatus(`${option.duration}: add at least one ${tourStyle.toLowerCase()} tour price.`);
+          return;
+        }
+        const invalidTier = invalidPricingTier(tiers);
+        if (invalidTier) {
+          setStatus(
+            `${option.duration}: ${tourStyle.toLowerCase()} tour price for ${invalidTier.travellers || "this"} ${invalidTier.travellers === 1 ? "person" : "people"} is required and must be greater than zero.`,
+          );
+          return;
+        }
+        if (hasDuplicateTravellerCount(tiers)) {
+          setStatus(`${option.duration}: each group size can be added only once for ${tourStyle.toLowerCase()} prices.`);
+          return;
+        }
+      }
     }
     const highlights = form.highlights.map((highlight) => ({
       title: highlight.title.trim(),
@@ -7283,15 +7716,36 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     const timeSlots = [...new Set(
       form.time_slots.map((slot) => slot.trim()).filter(Boolean),
     )];
+    const primaryDurationOption = durationOptions[0];
+    const allSharedPricingTiers = durationOptions.flatMap(
+      (option) => option.shared_tiers,
+    );
+    const allPrivatePricingTiers = durationOptions.flatMap(
+      (option) => option.private_tiers,
+    );
+    const allPricingTiers = [...allSharedPricingTiers, ...allPrivatePricingTiers];
+    const availablePricingModes = ["Shared", "Private"].filter((mode) =>
+      durationOptions.some((option) => option.available_modes.includes(mode)),
+    );
+    const defaultPublicPrice = Math.min(
+      ...allPricingTiers.map((tier) => tier.price_per_person),
+    );
+    const durationLabels = [...new Set(durationOptions.map((option) => option.duration))];
+    const durationSummary = (
+      durationLabels.length === 1
+        ? durationLabels[0]
+        : `${durationLabels[0]} + ${durationLabels.length - 1} more duration${durationLabels.length === 2 ? "" : "s"}`
+    ).slice(0, 80);
     const {
-      shared_pricing_tiers: _sharedPricingTiers,
-      private_pricing_tiers: _privatePricingTiers,
+      duration_options: _durationOptions,
       meeting_locations: _meetingLocations,
       ...formValues
     } = form;
     const payload = {
       ...formValues,
-      price: Math.min(...sharedPricingTiers.map((tier) => tier.price_per_person)),
+      duration: durationSummary,
+      mode: availablePricingModes.length === 2 ? "Both" : availablePricingModes[0],
+      price: defaultPublicPrice,
       capacity: Number(form.capacity),
       departure_date:
         form.schedule_type === "Daily" ? null : form.departure_date || null,
@@ -7313,13 +7767,19 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       end_meeting_map_url: primaryMeetingLocation.end_meeting_map_url,
       meeting_locations: meetingLocations,
       traveller_video_url: form.traveller_video_url.trim() || null,
-      private_price: Math.min(...privatePricingTiers.map((tier) => tier.price_per_person)),
+      private_price: allPrivatePricingTiers.length
+        ? Math.min(...allPrivatePricingTiers.map((tier) => tier.price_per_person))
+        : null,
       pricing: {
         currency: "INR",
         pricing_model: "per_person_by_group_size",
-        tiers: sharedPricingTiers,
-        shared_tiers: sharedPricingTiers,
-        private_tiers: privatePricingTiers,
+        tiers: primaryDurationOption.shared_tiers.length
+          ? primaryDurationOption.shared_tiers
+          : primaryDurationOption.private_tiers,
+        shared_tiers: primaryDurationOption.shared_tiers,
+        private_tiers: primaryDurationOption.private_tiers,
+        available_modes: availablePricingModes,
+        duration_options: durationOptions,
       },
       faq_items: faqItems.filter((item) => item.question && item.answer),
       review_items: reviewItems.filter((item) => item.name && item.review_point),
@@ -7441,16 +7901,6 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             </select>
           </label>
           <label>
-            Experience mode
-            <select
-              value={form.mode}
-              onChange={(event) => update("mode", event.target.value)}
-            >
-              <option>Shared</option>
-              <option>Private</option>
-            </select>
-          </label>
-          <label>
             Description
             <textarea
               required
@@ -7501,153 +7951,175 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               <option value="City">City (legacy)</option>
             </select>
           </label>
-          <label>
-            Duration
-            <input
-              required
-              value={form.duration}
-              onChange={(event) => update("duration", event.target.value)}
-              placeholder="4 hours"
-            />
-          </label>
-          <fieldset className="admin-pricing-section">
-            <legend>Prices by group size</legend>
+          <fieldset className="admin-duration-options">
+            <legend>Durations and prices</legend>
             <small>
-              Set the price per person for every group size. Use Departure time
-              slots below for all booking times.
+              Add every duration this tour offers. For each one, choose Shared,
+              Private, or Both, then enter only the relevant group prices.
             </small>
-            <div className="admin-pricing-mode-grid">
-              <section className="admin-pricing-mode">
-                <h3>Shared tour</h3>
-                <div className="admin-pricing-tier-list">
-                  {form.shared_pricing_tiers.map((tier, index) => (
-                    <div className="admin-pricing-tier-row" key={index}>
-                      <label>
-                        Travellers
-                        <select
-                          value={tier.travellers}
-                          onChange={(event) =>
-                            updatePricingTier(
-                              "shared_pricing_tiers",
-                              index,
-                              "travellers",
-                              event.target.value,
-                            )
-                          }
-                        >
-                          {groupSizeOptions.map((count) => (
-                            <option value={count} key={count}>
-                              {count} {count === 1 ? "person" : "people"}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        INR per person
-                        <input
-                          required
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={tier.price_per_person}
-                          onChange={(event) =>
-                            updatePricingTier(
-                              "shared_pricing_tiers",
-                              index,
-                              "price_per_person",
-                              event.target.value,
-                            )
-                          }
-                          placeholder="2250"
-                        />
-                      </label>
+            <div className="admin-duration-option-list">
+              {form.duration_options.map((durationOption, durationIndex) => (
+                <section className="admin-duration-option" key={durationOption.id}>
+                  <div className="admin-duration-option-heading">
+                    <b>Duration {durationIndex + 1}</b>
+                    {form.duration_options.length > 1 && (
                       <button
                         type="button"
                         className="repeat-remove"
-                        disabled={form.shared_pricing_tiers.length === 1}
-                        onClick={() => removePricingTier("shared_pricing_tiers", index)}
-                        aria-label={`Remove shared price for ${tier.travellers} travellers`}
+                        onClick={() => removeDurationOption(durationIndex)}
+                        aria-label={`Remove duration ${durationIndex + 1}`}
                       >
-                        <span className="material-symbols-outlined">delete</span>
+                        <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+                        Remove
                       </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="repeat-add"
-                  onClick={() => addPricingTier("shared_pricing_tiers")}
-                >
-                  <span className="material-symbols-outlined">add</span>
-                  Add shared price
-                </button>
-              </section>
-              <section className="admin-pricing-mode">
-                <h3>Private tour</h3>
-                <div className="admin-pricing-tier-list">
-                  {form.private_pricing_tiers.map((tier, index) => (
-                    <div className="admin-pricing-tier-row" key={index}>
-                      <label>
-                        Travellers
-                        <select
-                          value={tier.travellers}
-                          onChange={(event) =>
-                            updatePricingTier(
-                              "private_pricing_tiers",
-                              index,
-                              "travellers",
-                              event.target.value,
-                            )
-                          }
-                        >
-                          {groupSizeOptions.map((count) => (
-                            <option value={count} key={count}>
-                              {count} {count === 1 ? "person" : "people"}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        INR per person
-                        <input
-                          required
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={tier.price_per_person}
-                          onChange={(event) =>
-                            updatePricingTier(
-                              "private_pricing_tiers",
-                              index,
-                              "price_per_person",
-                              event.target.value,
-                            )
-                          }
-                          placeholder="3800"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="repeat-remove"
-                        disabled={form.private_pricing_tiers.length === 1}
-                        onClick={() => removePricingTier("private_pricing_tiers", index)}
-                        aria-label={`Remove private price for ${tier.travellers} travellers`}
-                      >
-                        <span className="material-symbols-outlined">delete</span>
+                    )}
+                  </div>
+                  <label className="admin-duration-input">
+                    Duration
+                    <input
+                      required
+                      maxLength="80"
+                      value={durationOption.duration}
+                      onChange={(event) => updateDurationOption(durationIndex, "duration", event.target.value)}
+                      placeholder="e.g. 4 hours"
+                    />
+                  </label>
+                  <div className="admin-pricing-type-options" role="group" aria-label={`Tour types for duration ${durationIndex + 1}`}>
+                    <button
+                      type="button"
+                      className={durationOption.pricing_modes.length === 1 && durationOption.pricing_modes[0] === "Shared" ? "is-selected" : ""}
+                      aria-pressed={durationOption.pricing_modes.length === 1 && durationOption.pricing_modes[0] === "Shared"}
+                      onClick={() => updateDurationPricingModes(durationIndex, ["Shared"])}
+                    >
+                      <b>Shared only</b>
+                      <small>Join fellow travellers</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={durationOption.pricing_modes.length === 1 && durationOption.pricing_modes[0] === "Private" ? "is-selected" : ""}
+                      aria-pressed={durationOption.pricing_modes.length === 1 && durationOption.pricing_modes[0] === "Private"}
+                      onClick={() => updateDurationPricingModes(durationIndex, ["Private"])}
+                    >
+                      <b>Private only</b>
+                      <small>Just their group</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={durationOption.pricing_modes.length === 2 ? "is-selected" : ""}
+                      aria-pressed={durationOption.pricing_modes.length === 2}
+                      onClick={() => updateDurationPricingModes(durationIndex, ["Shared", "Private"])}
+                    >
+                      <b>Both</b>
+                      <small>Let travellers choose</small>
+                    </button>
+                  </div>
+                  <div className="admin-pricing-mode-grid">
+                    {durationOption.pricing_modes.includes("Shared") && (
+                    <section className="admin-pricing-mode">
+                      <h3>Shared tour</h3>
+                      <div className="admin-pricing-tier-list">
+                        {durationOption.shared_pricing_tiers.map((tier, tierIndex) => (
+                          <div className="admin-pricing-tier-row" key={tierIndex}>
+                            <label>
+                              Travellers
+                              <select
+                                value={tier.travellers}
+                                onChange={(event) => updateDurationPricingTier(durationIndex, "shared_pricing_tiers", tierIndex, "travellers", event.target.value)}
+                              >
+                                {groupSizeOptions.map((count) => (
+                                  <option value={count} key={count}>
+                                    {count} {count === 1 ? "person" : "people"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              INR per person
+                              <input
+                                required
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={tier.price_per_person}
+                                onChange={(event) => updateDurationPricingTier(durationIndex, "shared_pricing_tiers", tierIndex, "price_per_person", event.target.value)}
+                                placeholder="2250"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="repeat-remove"
+                              disabled={durationOption.shared_pricing_tiers.length === 1}
+                              onClick={() => removeDurationPricingTier(durationIndex, "shared_pricing_tiers", tierIndex)}
+                              aria-label={`Remove shared price for ${tier.travellers} travellers`}
+                            >
+                              <span className="material-symbols-outlined">delete</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" className="repeat-add" onClick={() => addDurationPricingTier(durationIndex, "shared_pricing_tiers")}>
+                        <span className="material-symbols-outlined">add</span>
+                        Add shared price
                       </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="repeat-add"
-                  onClick={() => addPricingTier("private_pricing_tiers")}
-                >
-                  <span className="material-symbols-outlined">add</span>
-                  Add private price
-                </button>
-              </section>
+                    </section>
+                    )}
+                    {durationOption.pricing_modes.includes("Private") && (
+                    <section className="admin-pricing-mode">
+                      <h3>Private tour</h3>
+                      <div className="admin-pricing-tier-list">
+                        {durationOption.private_pricing_tiers.map((tier, tierIndex) => (
+                          <div className="admin-pricing-tier-row" key={tierIndex}>
+                            <label>
+                              Travellers
+                              <select
+                                value={tier.travellers}
+                                onChange={(event) => updateDurationPricingTier(durationIndex, "private_pricing_tiers", tierIndex, "travellers", event.target.value)}
+                              >
+                                {groupSizeOptions.map((count) => (
+                                  <option value={count} key={count}>
+                                    {count} {count === 1 ? "person" : "people"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              INR per person
+                              <input
+                                required
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={tier.price_per_person}
+                                onChange={(event) => updateDurationPricingTier(durationIndex, "private_pricing_tiers", tierIndex, "price_per_person", event.target.value)}
+                                placeholder="3800"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="repeat-remove"
+                              disabled={durationOption.private_pricing_tiers.length === 1}
+                              onClick={() => removeDurationPricingTier(durationIndex, "private_pricing_tiers", tierIndex)}
+                              aria-label={`Remove private price for ${tier.travellers} travellers`}
+                            >
+                              <span className="material-symbols-outlined">delete</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" className="repeat-add" onClick={() => addDurationPricingTier(durationIndex, "private_pricing_tiers")}>
+                        <span className="material-symbols-outlined">add</span>
+                        Add private price
+                      </button>
+                    </section>
+                    )}
+                  </div>
+                </section>
+              ))}
             </div>
+            <button type="button" className="repeat-add" onClick={addDurationOption} disabled={form.duration_options.length >= 12}>
+              <span className="material-symbols-outlined">add</span>
+              Add another duration
+            </button>
           </fieldset>
           <label>
             Group capacity
@@ -8104,6 +8576,8 @@ const multiDayCategoryOptions = [
   "Wildlife",
   "Festival",
   "City",
+  "North India",
+  "South India",
 ];
 const multiDayLanguageOptions = ["English", "Hindi", "French", "German", "Spanish"];
 const multiDayTransportOptions = [
@@ -8956,6 +9430,9 @@ function AdminRequestCard({ item, isJourney, onSave, onDelete }) {
 }
 
 function Footer({ go }) {
+  const [activePolicy, setActivePolicy] = useState(null);
+  const closePolicy = useCallback(() => setActivePolicy(null), []);
+
   return (
     <footer className="site-footer reference-footer">
       <div className="footer-skyline" aria-hidden="true"><img src={footerCitySkyline} alt="" /></div>
@@ -8971,14 +9448,17 @@ function Footer({ go }) {
         <button onClick={() => go("/about")}>Why choose us</button>
         <button onClick={() => go("/tours")}>Tours</button>
         <button onClick={() => go("/contact")}>Contact</button>
+        <button type="button" onClick={() => setActivePolicy("terms")}>Terms &amp; Conditions</button>
+        <button type="button" onClick={() => setActivePolicy("refund")}>Refund Policy</button>
+        <button type="button" onClick={() => setActivePolicy("privacy")}>Privacy Policy</button>
       </div>
       <div>
         <b>Top destinations</b>
         <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
-        <button onClick={() => go("/trips")}>South India</button>
-        <button onClick={() => go("/trips")}>North India</button>
-        <button onClick={() => go("/tours?city=Mumbai&category=Cultural")}>Dharavi</button>
+        <button onClick={() => go("/trips?category=South%20India")}>South India</button>
+        <button onClick={() => go("/trips?category=North%20India")}>North India</button>
+        <button onClick={() => go("/tours?city=Mumbai&category=Community")}>Dharavi</button>
         <button onClick={() => go("/tours/unique")}>Unique experiences</button>
       </div>
       <div className="footer-contact">
@@ -9024,6 +9504,7 @@ function Footer({ go }) {
       </div>
       </div>
       <div className="footer-bottom"><small>© 2026 Nomad Wanderers. All Rights Reserved.</small></div>
+      {activePolicy && <LegalPolicyModal policy={activePolicy} onClose={closePolicy} />}
     </footer>
   );
 }

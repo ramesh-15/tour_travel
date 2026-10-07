@@ -1573,7 +1573,12 @@ h3 {
 .tour-price-grid b { grid-column: 1 / -1; margin-top: 12px; color: var(--teal); font-size: 25px; }
 .tour-price-grid small { color: var(--muted); font-size: 12px; font-weight: 600; }
 .tour-price-grid ul { grid-column: 1 / -1; margin: 4px 0 0; padding: 16px 0 0; border-top: 1px solid #e3eceb; color: var(--muted); line-height: 1.8; }
+.tour-price-mode { display: block; margin-bottom: 5px; color: var(--teal); font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .tour-group-price-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 920px; margin-top: 18px; }
+@media (min-width: 560px) {
+  .tour-price-grid.tour-duration-price-grid,
+  .tour-group-price-tables.tour-duration-price-tables { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .tour-group-price-tables > article { padding: 22px; border: 1px solid #dbe8e6; border-radius: 14px; background: #f8fcfb; }
 .tour-group-price-tables h3 { margin: 0 0 13px; color: var(--ink); font-size: 18px; }
 .tour-group-price-table { display: grid; overflow: hidden; border: 1px solid #d8e9e6; border-radius: 10px; background: #fff; }
@@ -1598,7 +1603,7 @@ h3 {
 .meeting-grid p { margin: 0 0 26px; color: var(--muted); line-height: 1.7; }
 .meeting-map-card { display: grid; min-height: 220px; place-content: center; gap: 12px; border-radius: 16px; padding: 30px; color: #fff; text-align: center; background: linear-gradient(135deg, rgba(0, 88, 90, .94), rgba(0, 160, 173, .8)), url('https://images.unsplash.com/photo-1529253355930-ddbe423a2ac7?auto=format&fit=crop&w=1200&q=80') center/cover; }
 .meeting-map-card .material-symbols-outlined { font-size: 46px; color: #a7ffff; }
-.tour-reviews-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-width: 1000px; }
+.tour-reviews-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; max-width: none; }
 .tour-review-card { display: grid; gap: 16px; margin: 0; padding: 24px clamp(18px, 3vw, 40px); border: 1px solid #dce8e6; border-radius: 12px; background: #fff; color: var(--ink); }
 .tour-review-author { display: flex; align-items: center; gap: 14px; }
 .tour-review-avatar { display: grid; flex: 0 0 54px; width: 54px; height: 54px; place-items: center; border-radius: 50%; background: #e5f4ef; color: #07552c; font-size: 17px; font-weight: 800; }
@@ -3550,6 +3555,61 @@ h3 {
   font-weight: 800;
 }
 .admin-pricing-section > small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.admin-duration-options {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #baded9;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8fcfb, #f0f9f7);
+}
+.admin-duration-options legend {
+  padding: 0 5px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+.admin-duration-options > small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.admin-duration-option-list { display: grid; gap: 14px; }
+.admin-duration-option {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #cfe4e0;
+  border-radius: 11px;
+  background: #fff;
+}
+.admin-duration-option-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.admin-duration-option-heading > b { color: var(--teal); font-size: 15px; }
+.admin-duration-option-heading .repeat-remove { width: auto; min-height: 30px; padding: 5px 8px; }
+.admin-duration-input { max-width: 360px; margin-top: 0; }
+.admin-pricing-type-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.admin-pricing-type-options button {
+  display: grid;
+  min-height: 68px;
+  gap: 4px;
+  border: 1px solid #c9e0dc;
+  border-radius: 9px;
+  padding: 11px 12px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.admin-pricing-type-options button:hover { border-color: #7ebbb3; background: #f3fbfa; }
+.admin-pricing-type-options button.is-selected {
+  border-color: var(--teal);
+  background: #e9f8f6;
+  box-shadow: inset 0 0 0 1px var(--teal);
+}
+.admin-pricing-type-options b { color: var(--teal); font-size: 13px; }
+.admin-pricing-type-options small { color: var(--muted); font-size: 11px; font-weight: 500; }
 .admin-pricing-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
 .admin-pricing-mode {
   display: grid;
@@ -3580,6 +3640,8 @@ h3 {
   .admin-highlight-row label:nth-of-type(2) { grid-column: 2; }
   .admin-highlight-actions { grid-column: 3; grid-row: 1 / span 2; }
   .admin-pricing-mode-grid { grid-template-columns: 1fr; }
+  .admin-pricing-type-options { grid-template-columns: 1fr; }
+  .admin-duration-option-heading { align-items: flex-start; }
   .admin-pricing-tier-row { grid-template-columns: 1fr auto; }
   .admin-pricing-tier-row label:first-child { grid-column: 1; }
   .admin-pricing-tier-row label:nth-child(2) { grid-column: 1; }
@@ -5762,8 +5824,10 @@ textarea:focus-visible {
 .admin-reviews-table input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--teal); }
 .legacy-testimonials { display: none !important; }
 .founder-portrait { object-position: center; }
-.home-page .quote-grid { gap: 18px; }
-.home-page .home-review-card {
+.home-page .quote-grid,
+.tour-reviews .quote-grid { gap: 18px; }
+.home-page .home-review-card,
+.tour-reviews .home-review-card {
   min-height: 0;
   padding: 20px;
   border: 1px solid #e1ece8;
@@ -5855,7 +5919,8 @@ textarea:focus-visible {
 }
 .home-review-source:hover { color: var(--aqua); text-decoration: underline; }
 @media (max-width: 800px) {
-  .home-page .home-review-card { padding: 18px; }
+  .home-page .home-review-card,
+  .tour-reviews .home-review-card { padding: 18px; }
 }
 @media (max-width: 800px) {
   .admin-review-edit-row { grid-template-columns: 1fr; }
@@ -6084,6 +6149,26 @@ textarea:focus-visible {
 .booking-style-picker label { display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; padding: 11px 9px; border: 1px solid #cfe1de; border-radius: 12px; cursor: pointer; }
 .booking-style-picker input { grid-row: span 2; width: auto; accent-color: var(--teal); }
 .booking-style-picker small { grid-column: 2; color: var(--muted); font-size: 11px; font-weight: 500; }
+.booking-duration-picker {
+  display: grid;
+  gap: 9px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+.booking-duration-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.booking-duration-picker label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px;
+  align-items: center;
+  padding: 11px 9px;
+  border: 1px solid #cfe1de;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.booking-duration-picker label.selected { border-color: var(--teal); background: #edf8f7; }
+.booking-duration-picker input { width: auto; accent-color: var(--teal); }
 .booking-reservation-form .form-row { gap: 12px; }
 .booking-price-summary { display: grid; grid-template-columns: 1fr auto; gap: 4px; padding: 15px 0; border-top: 1px solid #dfebe8; color: var(--muted); font-size: 13px; }
 .booking-price-summary b { color: var(--ink); font-size: 21px; }
@@ -6094,7 +6179,7 @@ textarea:focus-visible {
 .booking-tour-loading p { color: var(--muted); }
 .booking-tour-loading > span { color: var(--teal); font-size: 32px; }
 @media (max-width: 900px) { .booking-experience-page { grid-template-columns: 1fr; } .booking-reservation-card { position: static; } }
-@media (max-width: 580px) { .booking-experience-page { gap: 27px; padding-top: 24px; } .booking-hero-card { height: 220px; border-radius: 16px; } .booking-tour-intro { padding-top: 26px; } .booking-facts, .booking-assurance-card { grid-template-columns: 1fr; } .booking-details-card, .booking-reservation-card { padding: 21px; border-radius: 16px; } .booking-style-picker > div { grid-template-columns: 1fr; } }
+@media (max-width: 580px) { .booking-experience-page { gap: 27px; padding-top: 24px; } .booking-hero-card { height: 220px; border-radius: 16px; } .booking-tour-intro { padding-top: 26px; } .booking-facts, .booking-assurance-card { grid-template-columns: 1fr; } .booking-details-card, .booking-reservation-card { padding: 21px; border-radius: 16px; } .booking-style-picker > div, .booking-duration-picker > div { grid-template-columns: 1fr; } }
 
 /* Final public-site layout alignment. The header is fixed, so its full height
    must be reserved before each standard public page begins. */
@@ -6664,10 +6749,29 @@ textarea:focus-visible {
 .booking-modal-style-picker input { width: auto; margin-top: 2px; accent-color: var(--teal); }
 .booking-modal-style-picker label > span { display: grid; gap: 3px; }
 .booking-modal-style-picker small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.booking-modal-duration-picker { display: grid; gap: 9px; color: var(--ink); font-size: 13px; font-weight: 750; }
+.booking-modal-duration-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.booking-modal-duration-picker label { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; padding: 11px; border: 1px solid #c5dcd8; border-radius: 11px; cursor: pointer; }
+.booking-modal-duration-picker label.selected { border-color: var(--teal); background: #edf8f7; }
+.booking-modal-duration-picker input { width: auto; margin: 0; accent-color: var(--teal); }
 .booking-modal-bottom { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; padding-top: 4px; }
 .booking-modal-bottom .booking-price-summary { align-self: center; }
 .booking-card .price > b:not(.booking-price-by-mode) { display: none; }
 .booking-price-by-mode { color: var(--ink); font-size: 30px; }
+.booking-card-duration-picker { display: grid; gap: 8px; margin: 15px 0 2px; }
+.booking-card-duration-picker > b { color: var(--ink); font-size: 13px; }
+.booking-card-duration-picker > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.booking-card-duration-picker button { min-height: 34px; padding: 6px 10px; border: 1px solid #c5dcd8; border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.booking-card-duration-picker button.is-selected { border-color: var(--teal); background: #edf8f7; color: var(--teal); }
+.booking-card-mode-picker { display: grid; gap: 8px; margin: 15px 0 2px; }
+.booking-card-mode-picker > b { color: var(--ink); font-size: 13px; }
+.booking-card-mode-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.booking-card-mode-picker button { display: grid; gap: 3px; min-height: 56px; padding: 9px 10px; border: 1px solid #c5dcd8; border-radius: 10px; background: #fff; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.booking-card-mode-picker button.is-selected { border-color: var(--teal); background: #edf8f7; }
+.booking-card-mode-picker button b { font-size: 12px; }
+.booking-card-mode-picker button small { color: var(--muted); font-size: 10px; font-weight: 600; line-height: 1.25; }
+.booking-card-cta { margin: 0 0 4px; }
+.tour-selected-duration { margin: -8px 0 20px; color: var(--muted); }
 .booking-modal-form > .primary-button,
 .booking-modal-success > .primary-button { width: 100%; }
 .booking-modal-success { display: grid; justify-items: center; gap: 10px; text-align: center; }
@@ -6679,6 +6783,8 @@ textarea:focus-visible {
   .booking-modal { max-height: calc(100vh - 20px); padding: 28px 19px 20px; border-radius: 19px 19px 13px 13px; }
   .booking-modal-form .form-row,
   .booking-modal-style-picker > div,
+  .booking-modal-duration-picker > div,
+  .booking-card-mode-picker > div,
   .booking-modal-bottom { grid-template-columns: 1fr; }
 }
 .admin-booking-notes { white-space: pre-line; }
@@ -6874,6 +6980,29 @@ textarea:focus-visible {
 }
 .admin-meeting-locations label { margin-top: 0; }
 
+.tour-meeting-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  max-width: 920px;
+  margin: 0;
+  padding: clamp(18px, 2.5vw, 26px);
+  border: 1px solid #cfe4e0;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f7fbfa, #edf8f6);
+  box-shadow: 0 10px 24px rgba(0, 64, 64, .05);
+}
+.tour-meeting-details > .material-symbols-outlined {
+  color: var(--teal);
+  font-size: 26px;
+}
+.tour-meeting-details p {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(16px, 1.45vw, 18px);
+  line-height: 1.7;
+  white-space: pre-line;
+}
 .tour-meeting-location-groups {
   display: grid;
   gap: 20px;
@@ -6965,6 +7094,7 @@ textarea:focus-visible {
 @media (max-width: 800px) {
   .admin-meeting-location-fields,
   .tour-meeting-locations { grid-template-columns: 1fr; }
+  .tour-meeting-details { gap: 11px; padding: 18px; }
   .tour-map-embed { height: 300px; min-height: 0; }
 }
 
@@ -7207,4 +7337,146 @@ textarea:focus-visible {
     background-size: contain;
     background-position: center;
   }
+}
+
+/* Legal policy dialogs opened from the public footer. */
+.legal-policy-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow-y: auto;
+  background: rgba(5, 31, 32, .72);
+  backdrop-filter: blur(5px);
+}
+.site-footer.reference-footer .legal-policy-backdrop {
+  align-content: center;
+  gap: 0;
+}
+.legal-policy-modal {
+  position: relative;
+  width: min(100%, 860px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: clamp(25px, 4vw, 42px);
+  border: 1px solid #d5e7e4;
+  border-radius: 22px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 26px 70px rgba(0, 30, 30, .34);
+}
+.site-footer .legal-policy-modal p,
+.site-footer .legal-policy-modal span,
+.site-footer .legal-policy-modal b,
+.site-footer .legal-policy-modal h2,
+.site-footer .legal-policy-modal h3 {
+  max-width: none;
+  color: inherit;
+}
+.site-footer .legal-policy-modal .legal-policy-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: #edf8f7;
+  color: var(--ink);
+  font: 400 27px/1 sans-serif;
+  cursor: pointer;
+}
+.site-footer .legal-policy-modal .legal-policy-close:hover { background: #dff1ef; color: var(--teal); }
+.site-footer .legal-policy-modal .legal-policy-close:focus-visible,
+.site-footer .legal-policy-modal a:focus-visible {
+  outline: 3px solid rgba(0, 206, 209, .3);
+  outline-offset: 3px;
+}
+.legal-policy-header { padding-right: 42px; }
+.legal-policy-header > span {
+  display: block;
+  color: var(--teal) !important;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.legal-policy-header h2 {
+  margin: 8px 0 10px;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -.04em;
+}
+.legal-policy-header p {
+  margin: 0;
+  color: var(--muted) !important;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.legal-policy-content {
+  margin-top: 25px;
+  border-top: 1px solid #dcebe8;
+}
+.legal-policy-content ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: legal-policy;
+}
+.legal-policy-content li {
+  position: relative;
+  padding: 19px 0 19px 38px;
+  border-bottom: 1px solid #e3eeec;
+  counter-increment: legal-policy;
+}
+.legal-policy-content li::before {
+  content: counter(legal-policy, decimal-leading-zero);
+  position: absolute;
+  top: 20px;
+  left: 0;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .05em;
+}
+.legal-policy-content h3 {
+  margin: 0;
+  color: var(--ink) !important;
+  font-size: 16px;
+}
+.legal-policy-content li p,
+.legal-policy-content .legal-policy-contact {
+  margin: 7px 0 0;
+  color: #435c5d !important;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.legal-policy-content .legal-policy-contact {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f4fbfa;
+}
+.site-footer .legal-policy-modal .legal-policy-contact b { color: var(--ink); }
+.site-footer .legal-policy-modal a {
+  color: var(--teal);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 580px) {
+  .legal-policy-backdrop { align-items: end; padding: 10px; }
+  .legal-policy-modal {
+    max-height: calc(100vh - 20px);
+    padding: 29px 19px 23px;
+    border-radius: 19px 19px 13px 13px;
+  }
+  .legal-policy-content li { padding-left: 34px; }
 }
