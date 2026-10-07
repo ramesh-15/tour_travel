@@ -187,6 +187,42 @@ function normalizeTourHighlights(highlights) {
     .filter((highlight) => highlight.title);
 }
 
+function splitTourDescription(description, targetWordCount = 60) {
+  const authoredParagraphs = String(description || "")
+    .split(/\r?\n+/)
+    .map((paragraph) => paragraph.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+
+  return authoredParagraphs.flatMap((paragraph) => {
+    const sentences = paragraph.match(/[^.!?]+(?:[.!?]+|$)/g) || [paragraph];
+    const paragraphs = [];
+    let currentSentences = [];
+    let currentWordCount = 0;
+
+    sentences.forEach((sentence) => {
+      const normalizedSentence = sentence.trim();
+      if (!normalizedSentence) return;
+      const wordCount = normalizedSentence.split(/\s+/).length;
+      const shouldStartNewParagraph =
+        currentSentences.length > 0 &&
+        currentWordCount >= targetWordCount * 0.65 &&
+        currentWordCount + wordCount > targetWordCount;
+
+      if (shouldStartNewParagraph) {
+        paragraphs.push(currentSentences.join(" "));
+        currentSentences = [];
+        currentWordCount = 0;
+      }
+
+      currentSentences.push(normalizedSentence);
+      currentWordCount += wordCount;
+    });
+
+    if (currentSentences.length) paragraphs.push(currentSentences.join(" "));
+    return paragraphs.length ? paragraphs : [paragraph];
+  });
+}
+
 function getTourHighlightTitle(highlight) {
   return typeof highlight === "string" ? highlight : highlight?.title || "";
 }
@@ -4006,6 +4042,7 @@ function TourDetail({
     (image, index, imagesList) => image && imagesList.indexOf(image) === index,
   );
   const inclusions = (tour.inclusions || []).filter(Boolean);
+  const descriptionParagraphs = splitTourDescription(tour.description);
   const reviews = (tour.review_items || [])
     .map((item, index) => ({
       id: item?.id || `${item?.name || item?.author || "review"}-${index}`,
@@ -4172,7 +4209,15 @@ function TourDetail({
         <div className="detail-content">
           <Eyebrow>Tour information</Eyebrow>
           <h2>{tour.title}</h2>
-          {tour.description && <p className="lead">{tour.description}</p>}
+          {descriptionParagraphs.length > 0 && (
+            <div className="tour-description">
+              {descriptionParagraphs.map((paragraph, index) => (
+                <p className="lead" key={`${index}-${paragraph.slice(0, 24)}`}>
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          )}
           {tour.traveller_video_url && (
             <div className="tour-video-wrap">
               <video src={tour.traveller_video_url} controls preload="metadata">

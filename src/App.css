@@ -1621,7 +1621,7 @@ h3 {
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(310px, 0.7fr);
-  gap: 70px;
+  gap: clamp(32px, 3vw, 48px);
   align-items: start;
 }
 .detail-content h2 {
@@ -1631,6 +1631,8 @@ h3 {
 .detail-content .lead {
   font-size: 20px;
 }
+.tour-description { display: grid; gap: 18px; max-width: 900px; }
+.detail-content .tour-description .lead { max-width: none; margin: 0; }
 .detail-content > p:not(.lead) {
   margin-top: 20px;
 }
@@ -7296,6 +7298,15 @@ textarea:focus-visible {
   .booking-reservation-card,
   .multi-day-booking-card {
     position: static;
+  }
+}
+
+@media (min-width: 981px) {
+  .top-space > .section.detail-layout {
+    width: min(calc(100% - 48px), 1320px);
+    max-width: 1320px;
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 410px);
+    gap: clamp(28px, 3vw, 44px);
   }
 }
 
