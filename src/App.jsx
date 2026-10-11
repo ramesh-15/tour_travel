@@ -695,7 +695,7 @@ function Header({
   };
   if (onAdminLogout)
     return (
-      <header className="site-header">
+      <header className="site-header admin-header">
         <nav ref={navigationRef}>
           <button className="brand" onClick={() => go("/")}>
             Nomad Wanderers
@@ -721,7 +721,7 @@ function Header({
                   }}
                 >
                   <span className="material-symbols-outlined">dashboard</span>
-                  Admin dashboard
+                  Workspace
                 </button>
                 <button className="profile-logout" onClick={onAdminLogout}>
                   <span className="material-symbols-outlined">logout</span>Log
@@ -2292,6 +2292,20 @@ function ToursV3({
     setFilter(nextFilter);
     setPage(1);
   };
+  const openTourBooking = (tour) => {
+    const activeMode = ["Shared", "Private"].includes(filter)
+      ? filter
+      : mode;
+    const availableModes = getTourBookingPrices(tour).availableModes;
+    const bookingMode = availableModes.includes(activeMode)
+      ? activeMode
+      : availableModes[0] || "";
+    const bookingModeQuery = bookingMode
+      ? `?booking_mode=${encodeURIComponent(bookingMode)}`
+      : "";
+
+    go(`/tours/${tour.id}${bookingModeQuery}`);
+  };
   return (
     <main className="top-space">
       {cityIntro && (
@@ -2369,7 +2383,7 @@ function ToursV3({
                   <div className="tour-body">
                     <div className="tour-meta">
                       <span>{tour.category}</span>
-                      <span>{tour.mode}</span>
+                      <span>{getTourTravelStyleLabel(tour)}</span>
                     </div>
                     <h2>{tour.title}</h2>
                     <p>{tour.text}</p>
@@ -2387,7 +2401,7 @@ function ToursV3({
                     </div>
                     <button
                       className={tour.dark ? "dark-button" : "outline-button"}
-                      onClick={() => go(`/tours/${tour.id}`)}
+                      onClick={() => openTourBooking(tour)}
                     >
                       Book this tour →
                     </button>
@@ -4063,9 +4077,7 @@ function TourDetail({
   );
   const highlights = normalizeTourHighlights(tour.highlights);
   const selectedDurationOption = getTourDurationOption(tour, durationOptionId);
-  const bookingModeLabel = availableBookingModes.length === 2
-    ? "Shared & private"
-    : availableBookingModes[0] || tour.mode;
+  const bookingModeLabel = getTourTravelStyleLabel(tour, durationOptionId);
   const sharedPrice = bookingPrices.shared;
   const privatePrice = bookingPrices.private;
   const selectedBookingPrice = selectedBookingMode === "Private"
@@ -4852,6 +4864,12 @@ function getTourBookingPrices(tour, durationOptionId = null) {
   };
 }
 
+function getTourTravelStyleLabel(tour, durationOptionId = null) {
+  if (!tour) return "";
+  const availableModes = getTourBookingPrices(tour, durationOptionId).availableModes;
+  return availableModes.join(" & ") || tour.mode || "";
+}
+
 function createDurationOptionId() {
   return `duration-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -5228,21 +5246,11 @@ function BookingRequestModal({
             ) : (
               <input name="duration_option_id" type="hidden" value={selectedDurationOption?.id || "default"} />
             )}
-            {availableBookingModes.length > 1 ? (
-              <div className="booking-modal-style-picker">
-                <span>How would you like to travel?</span>
-                <div>
-                  {availableBookingModes.map((option) => (
-                    <label className={bookingMode === option ? "selected" : ""} key={option}>
-                      <input name="booking_mode" type="radio" value={option} checked={bookingMode === option} onChange={() => setBookingMode(option)} />
-                      <span><b>{option} tour</b><small>{option === "Shared" ? "Join fellow travellers" : "Just your group"}</small></span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <input name="booking_mode" type="hidden" value={bookingMode} />
-            )}
+            <label>
+              Selected tour style
+              <input value={`${bookingMode} tour`} readOnly />
+            </label>
+            <input name="booking_mode" type="hidden" value={bookingMode} />
             <div className="form-row">
               <label>Preferred date<input name="date" required type="date" min={today} /></label>
               <label>Travellers<select name="travellers" value={travellers} onChange={(event) => setTravellers(Number(event.target.value))}>
@@ -9162,7 +9170,7 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
         <div className="admin-heading">
           <div>
             <Eyebrow>Private management</Eyebrow>
-            <h1>Admin Dashboard</h1>
+            <h1 className="sr-only">Admin workspace</h1>
             <p className="lead">
               Manage tours, traveller enquiries and tailor-made journeys from
               one place.

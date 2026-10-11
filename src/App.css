@@ -7490,3 +7490,241 @@ textarea:focus-visible {
   }
   .legal-policy-content li { padding-left: 34px; }
 }
+
+/* Keep the public mobile header compact without reducing its usable tap area. */
+@media (max-width: 800px) {
+  .public-header > nav {
+    gap: 12px;
+    padding-right: clamp(12px, 3vw, 18px);
+    padding-left: clamp(12px, 3vw, 18px);
+  }
+  .site-header .brand {
+    --brand-wordmark-width: clamp(108px, 32vw, 132px);
+    width: var(--brand-wordmark-width);
+    height: auto;
+    flex-basis: var(--brand-wordmark-width);
+    background-size: contain;
+  }
+  .public-header .mobile-quick-actions { gap: 10px; }
+  .public-header .mobile-quick-actions button,
+  .public-header .mobile-quick-actions a {
+    width: 36px;
+    height: 40px;
+  }
+  .public-header .mobile-quick-actions .material-symbols-outlined { font-size: 23px; }
+  .public-header .profile-nav-button {
+    width: 36px;
+    height: 36px;
+  }
+  .public-header .profile-nav-button .material-symbols-outlined { font-size: 23px; }
+  .public-header .mobile-nav-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+  }
+  .public-header .mobile-nav-toggle .material-symbols-outlined { font-size: 23px; }
+}
+
+@media (max-width: 600px) {
+  .public-header > nav { gap: 8px; }
+  .site-header .brand {
+    --brand-wordmark-width: clamp(104px, 31vw, 120px);
+    width: var(--brand-wordmark-width);
+    height: auto;
+  }
+  .public-header .mobile-quick-actions { gap: 6px; }
+}
+
+/* Restore a calm, single-column reading flow for the multi-day trip planner.
+   The desktop two-column rule appears later than the original mobile rule. */
+@media (max-width: 800px) {
+  .home-page .custom-travel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .home-page .custom-copy h2 {
+    margin-top: 10px;
+    font-size: clamp(36px, 10vw, 48px);
+    line-height: 1.05;
+  }
+
+  .home-page .custom-copy p {
+    max-width: 38rem;
+    margin: 18px 0 24px;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .home-page .custom-steps {
+    gap: 0;
+  }
+
+  .home-page .custom-steps article {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .home-page .custom-steps h3 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+}
+
+/* Keep the skyline full-bleed; the inner footer sections already provide
+   matching responsive gutters for the footer content. */
+.site-footer.reference-footer {
+  padding-right: 0;
+  padding-left: 0;
+  overflow-x: clip;
+}
+
+@media (max-width: 600px) {
+  .site-footer.reference-footer {
+    padding-inline: 0;
+  }
+
+  .site-footer.reference-footer::before {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .reference-footer .footer-brand-row,
+  .reference-footer .footer-reference-grid,
+  .reference-footer .footer-bottom {
+    width: calc(100% - 48px);
+  }
+}
+
+/* Let the trip planner stack as soon as two columns would become cramped.
+   This also protects the layout in browsers using a scaled mobile viewport. */
+.home-page .custom-travel {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  gap: clamp(28px, 5vw, 72px);
+}
+
+@media (max-width: 800px) {
+  .home-page .custom-copy .primary-button {
+    display: inline-flex;
+    width: 100%;
+    max-width: 300px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  .home-page .custom-copy .primary-button span {
+    margin-left: 0;
+  }
+}
+
+/* Keep all running copy easy to read. Visual emphasis remains reserved for
+   headings, actions, prices, labels, and explicitly marked strong text. */
+p,
+.about-quote p,
+.booking-itinerary-item p,
+.city-tour-hero p,
+.multi-day-detail-hero p {
+  font-weight: 400;
+}
+
+/* Keep the admin header balanced: the workspace label stays truly centered
+   while the brand and account control share matching outer positions. */
+.admin-header > nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.admin-header .brand {
+  justify-self: start;
+  align-self: center;
+}
+
+.admin-header .nav-links {
+  justify-self: center;
+  min-width: 0;
+}
+
+.admin-header .profile-nav-menu {
+  justify-self: end;
+  align-self: center;
+}
+
+/* Treat the login wordmark and its access label as one aligned identity row,
+   rather than letting two inline elements find different text baselines. */
+.auth-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 52px;
+}
+
+.auth-brand-row .auth-brand {
+  --auth-wordmark-width: clamp(200px, 15vw, 222px);
+  width: var(--auth-wordmark-width);
+  height: auto;
+  flex: 0 0 var(--auth-wordmark-width);
+  margin: 0;
+  transform-origin: left center;
+}
+
+.auth-brand-row > .eyebrow {
+  margin: 0;
+  color: var(--teal);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+@media (min-width: 601px) and (max-width: 850px) {
+  .auth-brand-row {
+    margin-bottom: 34px;
+  }
+}
+
+@media (max-width: 600px) {
+  .auth-brand-row {
+    margin-bottom: 10px;
+  }
+
+  .auth-brand-row .auth-brand {
+    display: none;
+  }
+
+}
+
+/* One readable size for normal copy across the public experience. Headings,
+   prices, labels, and compact metadata retain their deliberate hierarchy. */
+:root {
+  --body-copy-size: 16px;
+}
+
+.home-page p,
+.top-space > :not(.admin-dashboard):not(.admin-editor) p,
+.auth-card > p {
+  font-size: var(--body-copy-size);
+}
+
+/* On phones, do not retain the tablet gallery's unused fixed grid rows.
+   This lets Meeting Details follow the final gallery image without a blank area. */
+@media (max-width: 800px) {
+  #tour-gallery .gallery-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  #tour-gallery .gallery-grid .gallery-main,
+  #tour-gallery .gallery-grid img:last-child {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  #tour-gallery .gallery-grid img {
+    height: auto;
+    aspect-ratio: 16 / 10;
+  }
+}
+

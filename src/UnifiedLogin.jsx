@@ -122,10 +122,12 @@ export default function UnifiedLogin({ apiBaseUrl, onAuthenticated }) {
       </section>
       <section className="auth-panel">
         <div className="auth-card">
-          <button className="brand auth-brand" onClick={() => window.location.assign("/")}>
-            Nomad Wanderers
-          </button>
-          <span className="eyebrow">Secure access</span>
+          <div className="auth-brand-row">
+            <button className="brand auth-brand" onClick={() => window.location.assign("/")}>
+              Nomad Wanderers
+            </button>
+            <span className="eyebrow">Secure access</span>
+          </div>
           <h2>{title}</h2>
           <p>{description}</p>
           <form onSubmit={submit}>
