@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import delhiIndiaGate from "./assets/delhi-india-gate.png";
+import diwaliFestivalHero from "./assets/diwali-festival-hero.png";
 import roadTripCar from "./assets/road-trip-car.png";
 import rajasthanCamelTour from "./assets/rajasthan-desert-camel-tour.png";
 import footerCitySkyline from "./assets/footer-city-skyline.png";
@@ -8,6 +9,9 @@ import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
 import { LegalPolicyModal, PaymentTermsAcceptance } from "./PaymentTerms";
+import { CurrencyButton, CurrencyPaymentNote, CurrencyProvider, Money, TourPrice } from "./CurrencyPreferences";
+import { PaymentQuoteStatus, paymentOrderDetails, usePaymentQuote } from "./PaymentQuote.jsx";
+import { formatPaymentAmount } from "./currency";
 import "./App.css";
 
 const images = {
@@ -507,7 +511,7 @@ function App() {
     <ToursV3
       go={go}
       city=""
-      category="Unique"
+      category="Festival"
       tours={tours}
       searchTerm={tourSearchTerm}
     />
@@ -562,7 +566,7 @@ function App() {
     go("/login");
   };
   return (
-    <>
+    <CurrencyProvider apiBaseUrl={apiBaseUrl} enabled={!isAdminPath(path) && !isStaffPath(path)}>
       {!showingLogin && (
         <Header
           path={path}
@@ -580,7 +584,7 @@ function App() {
       {page}
       {!showingLogin && (
         <>
-          <Footer go={go} />
+          <Footer go={go} path={path} />
           <a
             className="floating-whatsapp"
             href={`https://wa.me/${businessWhatsAppNumber}?text=Hello%20Nomad%20Wanderers%2C%20I%20would%20like%20to%20plan%20a%20tour.`}
@@ -600,7 +604,7 @@ function App() {
           onContinue={continueToLogin}
         />
       )}
-    </>
+    </CurrencyProvider>
   );
 }
 
@@ -876,6 +880,7 @@ function Header({
             </span> */}
           </div>
           <div className="contact-bar-actions">
+            <CurrencyButton />
             <form className="contact-bar-search" onSubmit={submitTourSearch} role="search">
               <label className="sr-only" htmlFor="contact-tour-search">
                 Search tours
@@ -1000,7 +1005,7 @@ function Header({
                 </div>
                 <span className="dropdown-divider" />
                 <button onClick={() => selectTour("/tours/unique")}>
-                  Unique Experiences
+                  Festive Experiences
                 </button>
               </div>
             )}
@@ -1108,6 +1113,7 @@ function Header({
         </button>
         {mobileNavOpen && (
           <div id="mobile-navigation" className="mobile-nav-menu">
+            <div className="mobile-currency-control"><CurrencyButton /></div>
             <button
               className={path === "/" ? "active" : ""}
               onClick={() => mobileNavigate("/")}
@@ -1161,7 +1167,7 @@ function Header({
               className={path === "/tours/unique" ? "active trip-option" : "trip-option"}
               onClick={() => mobileNavigate("/tours/unique")}
             >
-              Unique Experiences
+              Festive Experiences
             </button>
             <span>Multi-day Tours</span>
             <button
@@ -2173,6 +2179,21 @@ function ToursV3({
   const [page, setPage] = useState(1);
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
+  const normalizedCategory = String(category).trim().toLowerCase();
+  const isFestiveCollection = ["festival", "unique"].includes(normalizedCategory);
+  const matchesSelectedCategory = useCallback((tour, selectedCategory) => {
+    if (!selectedCategory) return true;
+    const selectedCategories = selectedCategory === "Festival"
+      ? ["festival", "unique"]
+      : [String(selectedCategory).trim().toLowerCase()];
+    const tourCategories = [
+      tour.category,
+      ...(Array.isArray(tour.categories) ? tour.categories : []),
+    ]
+      .filter(Boolean)
+      .map((tourCategory) => String(tourCategory).trim().toLowerCase());
+    return tourCategories.some((tourCategory) => selectedCategories.includes(tourCategory));
+  }, []);
   const filters = [
     "All experiences",
     "Heritage",
@@ -2187,21 +2208,18 @@ function ToursV3({
     "Shared",
     "Private",
   ];
-  const categoryTitle =
-    category === "Unique"
-      ? "Unique Experiences"
-      : category === "Festival"
-        ? "Festival Tours"
-        : category
-          ? `${category} Tours`
-          : "Curated Experiences";
+  const categoryTitle = isFestiveCollection
+    ? "Festive Experiences"
+    : category
+      ? `${category} Tours`
+      : "Curated Experiences";
   const cityTourContent = {
     Mumbai: {
       image: images.mumbai,
       imageAlt: "Visitors exploring Mumbai near the Gateway of India",
       title: "Mumbai City Tours",
       subtitle: "Discover the real Mumbai",
-      heading: "Why choose our Mumbai City Tours",
+      heading: "Why choose our Mumbai City Tours?",
       description: [
         "Nomad Wanderers is rooted in Mumbai and creates locally led city tours that move beyond the usual checklist. Explore landmark views, historic lanes, markets and neighbourhood stories with hosts who know how the city moves.",
         "Our small-group and private experiences are thoughtfully paced around your interests, leaving time for local food, honest conversation and the everyday places most visitors pass by.",
@@ -2212,7 +2230,7 @@ function ToursV3({
       imageAlt: "India Gate in Delhi",
       title: "Delhi City Tours",
       subtitle: "Discover the stories of Delhi",
-      heading: "Why choose our Delhi City Tours",
+      heading: "Why choose our Delhi City Tours?",
       description: [
         "Delhi is a city of layered history, living traditions and unforgettable contrasts. Explore old lanes, grand monuments, food markets and local neighbourhoods with a guide who brings each place into focus.",
         "Our small-group and private experiences connect the capital's famous sights with the people, flavours and stories that make Delhi feel personal rather than hurried.",
@@ -2229,14 +2247,26 @@ function ToursV3({
       description: [`Join locally led experiences that reveal the history, culture, food and everyday stories of ${city}.`],
     }
     : null;
+  const festivalIntro = isFestiveCollection
+    ? {
+      image: diwaliFestivalHero,
+      imageAlt: "Diwali diyas, rangoli and fireworks over an Indian city",
+      title: "Festival Tours",
+      subtitle: "Celebrate India's living traditions",
+      heading: "Why choose our Festive Tours?",
+      description: [
+        "India's festivals are best experienced with the people, traditions and local stories that bring each celebration to life. Our hosts help you move beyond the spectacle with thoughtful, respectful access to seasonal rituals, food and neighbourhood gatherings.",
+        "Travel in a small group or privately, with a well-paced plan that leaves room to enjoy the lights, flavours and spontaneous moments that make every festival memorable.",
+      ],
+    }
+    : null;
+  const collectionIntro = cityIntro || festivalIntro;
   const categoryLead =
-    category === "Unique"
-      ? "Discover thoughtful, locally led experiences built around the people, places, and stories visitors often miss."
-      : category === "Festival"
-        ? "Celebrate India through locally led festival experiences, cultural traditions and memorable seasonal moments."
-        : category
-          ? `Explore our ${category.toLowerCase()} experiences, led by local experts and designed around memorable stories.`
-          : "Browse local experiences by the stories you want to take home—from heritage streets and food trails to culture-led walks.";
+    isFestiveCollection
+      ? "Celebrate India through locally led festival experiences, cultural traditions and memorable seasonal moments."
+      : category
+        ? `Explore our ${category.toLowerCase()} experiences, led by local experts and designed around memorable stories.`
+        : "Browse local experiences by the stories you want to take home—from heritage streets and food trails to culture-led walks.";
   useEffect(() => {
     setLoading(true);
     const selectedMode = ["Shared", "Private"].includes(filter)
@@ -2245,7 +2275,7 @@ function ToursV3({
     const selectedCategory = ["All experiences", "Shared", "Private"].includes(
       filter,
     )
-      ? category
+      ? (isFestiveCollection ? "Festival" : category)
       : filter;
     const parameters = new URLSearchParams({
       page: String(page),
@@ -2262,9 +2292,9 @@ function ToursV3({
         if (apiItems.length) setResults({ items: apiItems, total: data.total });
         else {
           const fallback = tours.filter((item) =>
-            !isMultiDayTour(item) &&
+            (!isMultiDayTour(item) || isFestiveCollection) &&
             (!city || item.city === city) &&
-            (!selectedCategory || item.category === selectedCategory) &&
+            matchesSelectedCategory(item, selectedCategory) &&
             (!selectedMode || getTourAvailableModes(item).includes(selectedMode)),
           );
           setResults({ items: fallback, total: fallback.length });
@@ -2272,15 +2302,15 @@ function ToursV3({
       })
       .catch(() => {
         const fallback = tours.filter((item) =>
-          !isMultiDayTour(item) &&
+          (!isMultiDayTour(item) || isFestiveCollection) &&
           (!city || item.city === city) &&
-          (!selectedCategory || item.category === selectedCategory) &&
+          matchesSelectedCategory(item, selectedCategory) &&
           (!selectedMode || getTourAvailableModes(item).includes(selectedMode)),
         );
         setResults({ items: fallback, total: fallback.length });
       })
       .finally(() => setLoading(false));
-  }, [filter, search, page, city, category, mode, tours]);
+  }, [filter, search, page, city, category, mode, tours, isFestiveCollection, matchesSelectedCategory]);
   useEffect(() => {
     setPage(1);
     setFilter("All experiences");
@@ -2293,6 +2323,10 @@ function ToursV3({
     setPage(1);
   };
   const openTourBooking = (tour) => {
+    if (isMultiDayTour(tour)) {
+      go(`/trips/${tour.id}`);
+      return;
+    }
     const activeMode = ["Shared", "Private"].includes(filter)
       ? filter
       : mode;
@@ -2308,30 +2342,30 @@ function ToursV3({
   };
   return (
     <main className="top-space">
-      {cityIntro && (
+      {collectionIntro && (
         <section className="city-tour-intro">
           <div className="city-tour-hero">
-            <img src={cityIntro.image} alt={cityIntro.imageAlt} />
+            <img src={collectionIntro.image} alt={collectionIntro.imageAlt} />
             <div className="city-tour-hero-content">
-              <h1>{cityIntro.title}</h1>
-              <p>{cityIntro.subtitle}</p>
+              <h1>{collectionIntro.title}</h1>
+              <p>{collectionIntro.subtitle}</p>
             </div>
           </div>
           <div className="city-tour-intro-copy">
             <div className="city-tour-intro-heading">
               <Eyebrow>Discover</Eyebrow>
-              <h2>{cityIntro.heading}</h2>
+              <h2>{collectionIntro.heading}</h2>
             </div>
             <div className="city-tour-intro-body">
-              {cityIntro.description.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+              {collectionIntro.description.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             </div>
           </div>
         </section>
       )}
-      <section className={`section tours-page ${city ? "city-selected" : ""}`}>
+      <section className={`section tours-page ${collectionIntro ? "collection-intro-selected" : ""}`}>
         <Eyebrow>
           {category
-            ? category === "Unique" ? "Handpicked experiences" : "Seasonal experiences"
+            ? isFestiveCollection ? "Festive experiences" : "Seasonal experiences"
             : city
               ? `Explore ${city}`
               : "Find your kind of day"}
@@ -2382,7 +2416,7 @@ function ToursV3({
                   </div>
                   <div className="tour-body">
                     <div className="tour-meta">
-                      <span>{tour.category}</span>
+                      <span>{isFestiveCollection && String(tour.category).trim().toLowerCase() === "unique" ? "Festival" : tour.category}</span>
                       <span>{getTourTravelStyleLabel(tour)}</span>
                     </div>
                     <h2>{tour.title}</h2>
@@ -2390,7 +2424,7 @@ function ToursV3({
                     <div className="tour-details">
                       <span>{tour.duration}</span>
                       <strong>
-                        {tour.price}
+                        <TourPrice tour={tour} />
                         <small> / person</small>
                       </strong>
                     </div>
@@ -2492,7 +2526,7 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
     <main className="top-space multi-day-page">
       <section
         className="multi-day-hero"
-        style={{ backgroundImage: `linear-gradient(90deg, rgba(0, 32, 35, .72), rgba(0, 32, 35, .2)), url(${heroImage})` }}
+        style={{ backgroundImage: `linear-gradient(180deg, rgba(0, 32, 35, .68), rgba(0, 32, 35, .42)), url(${heroImage})` }}
       >
         <div className="multi-day-hero-content">
           <Eyebrow>Longer journeys, deeper connections</Eyebrow>
@@ -2556,7 +2590,7 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
                   <div className="tour-details">
                     <span>{tour.duration}</span>
                     <strong>
-                      {tour.price}
+                      <TourPrice tour={tour} />
                       <small> / person</small>
                     </strong>
                   </div>
@@ -2813,7 +2847,7 @@ function MultiDayTourDetail({
             <div className="multi-day-pricing-display">
               {(pricing.pricing_model === "on_request" || basePrice > 0) && <article>
                 <small>{pricing.pricing_model === "on_request" ? "Price" : "From"}</small>
-                <strong>{pricing.pricing_model === "on_request" ? "Price on request" : formatInr(basePrice)}</strong>
+                <strong>{pricing.pricing_model === "on_request" ? "Price on request" : <Money amount={basePrice} />}</strong>
                 {pricing.pricing_model !== "on_request" && <span>per person</span>}
               </article>}
               {availability.booking_type && <article><small>Availability</small><b>{availability.booking_type}</b>{availability.customizable && <span>Customisable for private bookings</span>}</article>}
@@ -2821,7 +2855,7 @@ function MultiDayTourDetail({
             {pricing.pricing_model === "per_person_by_group_size" && priceTiers.length > 0 && (
               <div className="multi-day-price-table">
                 <div><b>Group size</b><b>Price per person</b></div>
-                {priceTiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {Number(tier.travellers) === 1 ? "traveller" : "travellers"}</span><strong>{formatInr(tier.price_per_person)}</strong></div>)}
+                {priceTiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {Number(tier.travellers) === 1 ? "traveller" : "travellers"}</span><strong><Money amount={tier.price_per_person} /></strong></div>)}
               </div>
             )}
           </section>}
@@ -2841,7 +2875,7 @@ function MultiDayTourDetail({
 
         <aside className="multi-day-booking-card">
           {tour.mode && <span>{tour.mode} journey</span>}
-          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : `From ${formatInr(basePrice)} per person`}</h2>}
+          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : <>From <Money amount={basePrice} /> per person</>}</h2>}
           {availability.booking_type && <p>{availability.booking_type}{availability.max_travellers ? ` · up to ${availability.max_travellers} guests` : ""}</p>}
           <button className="primary-button" onClick={openBooking}>{bookingLabel} →</button>
         </aside>
@@ -4285,7 +4319,7 @@ function TourDetail({
               <small>
                 {selectedBookingMode} tour{selectedBookingTierCount ? " · from" : ""}
               </small>
-              <b className="booking-price-by-mode">{formatInr(selectedBookingPrice)}</b>
+              <b className="booking-price-by-mode"><Money amount={selectedBookingPrice} /></b>
               <span>per person</span>
             </div>
           )}
@@ -4316,7 +4350,7 @@ function TourDetail({
           {hasMultipleDurations && (
             <p className="tour-selected-duration">Compare prices for each available duration.</p>
           )}
-          {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b>{formatInr(item.value)} <small>per person</small></b></article>)}</div>}
+          {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b><Money amount={item.value} /> <small>per person</small></b></article>)}</div>}
           {displayedGroupPriceTables.length > 0 && (
             <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
               {displayedGroupPriceTables.map((table) => (
@@ -4328,7 +4362,7 @@ function TourDetail({
                     {table.tiers.map((tier) => (
                       <div key={tier.travellers}>
                         <span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span>
-                        <strong>{formatInr(tier.price_per_person)}</strong>
+                        <strong><Money amount={tier.price_per_person} /></strong>
                       </div>
                     ))}
                   </div>
@@ -4952,6 +4986,9 @@ function BookingRequestModal({
   const [paymentComplete, setPaymentComplete] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const paymentVerificationInProgress = useRef(false);
+  const { quote: paymentQuote, formattedAmount: paymentAmount, quoteError, refreshQuote } = usePaymentQuote({
+    apiBaseUrl, token: session?.token, booking: createdBooking, enabled: !paymentComplete && !paying,
+  });
   const generalTimeSlots = useMemo(
     () =>
       [...new Set(
@@ -5100,25 +5137,13 @@ function BookingRequestModal({
       if (!window.Razorpay) {
         throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
       }
-      const amountInPaise = Math.round(
-        Number(createdBooking.price || 0) * Number(createdBooking.travellers || 1) * 100,
-      );
-      if (amountInPaise < 100) {
-        throw new Error("The payment amount must be at least ₹1.");
-      }
       const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session?.token || ""}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          booking_id: createdBooking.id,
-          amount: amountInPaise,
-          currency: "INR",
-          receipt: `booking-${createdBooking.id}`,
-          terms_accepted: true,
-        }),
+        body: JSON.stringify(paymentOrderDetails(createdBooking.id, paymentQuote)),
       });
       const order = await orderResponse.json().catch(() => ({}));
       if (!orderResponse.ok) {
@@ -5133,6 +5158,7 @@ function BookingRequestModal({
         name: "Nomad Wanderers",
         description: `${createdBooking.tour_title} · Booking #${createdBooking.id}`,
         order_id: order.order_id,
+        prefill: { name: travellerDetails.name, email: travellerDetails.email, contact: travellerDetails.phone },
         handler: async (payment) => {
           paymentVerificationInProgress.current = true;
           try {
@@ -5211,15 +5237,16 @@ function BookingRequestModal({
                   onChange={setTermsAccepted}
                   disabled={paying}
                 />
+                <PaymentQuoteStatus error={quoteError} onRetry={refreshQuote} />
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={paying || !termsAccepted}
+                  disabled={paying || !termsAccepted || !paymentQuote}
                   onClick={startRazorpayCheckout}
                 >
                   {paying
                     ? "Opening secure checkout…"
-                    : `Pay ${formatInr(Number(createdBooking?.price || 0) * Number(createdBooking?.travellers || 1))} with Razorpay`}
+                    : paymentQuote ? `Pay ${paymentAmount} with Razorpay` : quoteError ? "Payment amount unavailable" : "Preparing payment amount…"}
                 </button>
               </>
             )}
@@ -5275,8 +5302,9 @@ function BookingRequestModal({
             <label>Anything we should know?<textarea name="message" rows="3" placeholder="Accessibility needs, celebration plans, or questions..." /></label>
             <div className="booking-modal-bottom">
               <div className="booking-price-summary">
-                <span>{formatInr(unitPrice)} × {travellers} {bookingMode.toLowerCase()}</span>
-                <b>{formatInr(total)}</b>
+                <span><Money amount={unitPrice} /> × {travellers} {bookingMode.toLowerCase()}</span>
+                <b><Money amount={total} /></b>
+                <CurrencyPaymentNote />
                 <small>Pay securely with Razorpay after creating your booking.</small>
               </div>
             </div>
@@ -5699,8 +5727,10 @@ function ContactFlowV2({ session }) {
   const [submitting, setSubmitting] = useState(false);
   const [tourDetails, setTourDetails] = useState(null);
   const [createdBooking, setCreatedBooking] = useState(null);
+  const [bookingContact, setBookingContact] = useState({ name: "", email: "", phone: "" });
   const [paying, setPaying] = useState(false);
   const [paymentComplete, setPaymentComplete] = useState(false);
+  const [completedPaymentAmount, setCompletedPaymentAmount] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const paymentVerificationInProgress = useRef(false);
   const query = new URLSearchParams(window.location.search);
@@ -5715,6 +5745,9 @@ function ContactFlowV2({ session }) {
       : "Contact Our Team";
   const customerToken =
     session?.token || sessionStorage.getItem("nomad_user_token");
+  const { quote: paymentQuote, formattedAmount: paymentAmount, quoteError, refreshQuote } = usePaymentQuote({
+    apiBaseUrl, token: customerToken, booking: createdBooking, enabled: !paymentComplete && !paying,
+  });
   useEffect(() => {
     if (!isBooking || !requestedTour) return;
     fetch(
@@ -5807,6 +5840,7 @@ function ContactFlowV2({ session }) {
             formatApiError(booking.detail, "Unable to create your booking."),
           );
         setCreatedBooking(booking);
+        setBookingContact({ name: String(values.name || ""), email: String(values.email || ""), phone: String(values.phone || "") });
         setTermsAccepted(false);
         setSubmitting(false);
       } catch (error) {
@@ -5869,25 +5903,13 @@ function ContactFlowV2({ session }) {
       if (!window.Razorpay) {
         throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
       }
-      const amountInPaise = Math.round(
-        Number(createdBooking.price || 0) * Number(createdBooking.travellers || 1) * 100,
-      );
-      if (amountInPaise < 100) {
-        throw new Error("The payment amount must be at least ₹1.");
-      }
       const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${customerToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          booking_id: createdBooking.id,
-          amount: amountInPaise,
-          currency: "INR",
-          receipt: `booking-${createdBooking.id}`,
-          terms_accepted: true,
-        }),
+        body: JSON.stringify(paymentOrderDetails(createdBooking.id, paymentQuote)),
       });
       const order = await orderResponse.json().catch(() => ({}));
       if (!orderResponse.ok) {
@@ -5902,6 +5924,7 @@ function ContactFlowV2({ session }) {
         name: "Nomad Wanderers",
         description: `${createdBooking.tour_title} · Booking #${createdBooking.id}`,
         order_id: order.order_id,
+        prefill: { name: bookingContact.name, email: bookingContact.email, contact: bookingContact.phone },
         handler: async (payment) => {
           paymentVerificationInProgress.current = true;
           try {
@@ -5923,6 +5946,7 @@ function ContactFlowV2({ session }) {
               );
             }
             setCreatedBooking(verification.booking);
+            setCompletedPaymentAmount(formatPaymentAmount(order.amount, order.currency));
             setPaymentComplete(true);
           } catch (error) {
             setStatus(error.message);
@@ -5958,6 +5982,10 @@ function ContactFlowV2({ session }) {
         status={status}
         submitting={submitting}
         booking={createdBooking}
+        paymentQuote={paymentQuote}
+        paymentAmount={paymentComplete ? completedPaymentAmount : paymentAmount}
+        quoteError={quoteError}
+        refreshPaymentQuote={refreshQuote}
         paying={paying}
         paymentComplete={paymentComplete}
         onPay={startRazorpayCheckout}
@@ -6245,6 +6273,10 @@ function BookingExperiencePage({
   status,
   submitting,
   booking,
+  paymentQuote,
+  paymentAmount,
+  quoteError,
+  refreshPaymentQuote,
   paying = false,
   paymentComplete = false,
   onPay,
@@ -6386,7 +6418,7 @@ function BookingExperiencePage({
             <div className="booking-payment-step">
               <div className="booking-price-summary">
                 <span>Booking #{booking.id}</span>
-                <b>{formatInr(Number(booking.price || 0) * Number(booking.travellers || 1))}</b>
+                <b>{paymentComplete || paymentQuote ? paymentAmount : quoteError ? "Payment amount unavailable" : "Preparing payment amount…"}</b>
                 <small>Secure checkout powered by Razorpay.</small>
               </div>
               {!paymentComplete && (
@@ -6396,8 +6428,9 @@ function BookingExperiencePage({
                     onChange={onTermsAcceptedChange}
                     disabled={paying}
                   />
-                  <button className="primary-button" type="button" disabled={paying || !termsAccepted} onClick={onPay}>
-                    {paying ? "Opening secure checkout…" : "Pay with Razorpay"}
+                  <PaymentQuoteStatus error={quoteError} onRetry={refreshPaymentQuote} />
+                  <button className="primary-button" type="button" disabled={paying || !termsAccepted || !paymentQuote} onClick={onPay}>
+                    {paying ? "Opening secure checkout…" : paymentQuote ? `Pay ${paymentAmount} with Razorpay` : quoteError ? "Payment amount unavailable" : "Preparing payment amount…"}
                   </button>
                 </>
               )}
@@ -6443,7 +6476,7 @@ function BookingExperiencePage({
               <label>Phone or WhatsApp<input name="phone" required type="tel" placeholder="+91 96199 52139" /></label>
             </div>
             <label>Anything we should know?<textarea name="message" rows="3" placeholder="Accessibility needs, celebration plans, or questions..." /></label>
-            <div className="booking-price-summary"><span>From ₹{price.toLocaleString("en-IN")} × {travellers}</span><b>₹{total.toLocaleString("en-IN")}</b><small>Final amount is confirmed with availability.</small></div>
+            <div className="booking-price-summary"><span>From <Money amount={price} /> × {travellers}</span><b><Money amount={total} /></b><CurrencyPaymentNote /><small>Final amount is confirmed with availability.</small></div>
             <button className="primary-button" type="submit" disabled={submitting || !tour}>{submitting ? "Booking tour…" : "Book this tour →"}</button>
             {status && <p className="admin-status">{status}</p>}
           </form>
@@ -7993,13 +8026,13 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               <option value="" disabled>Select a category</option>
               <option value="Community">Community</option>
               <option value="Sightseeing">Sightseeing</option>
-              <option value="Unique">Unique experiences</option>
+              <option value="Festival">Festive Experiences</option>
+              <option value="Unique">Festive Experiences (legacy)</option>
               <option value="Heritage">Heritage</option>
               <option value="Food">Food</option>
               <option value="Culture">Culture</option>
               <option value="Walking">Walking</option>
               <option value="Adventure">Adventure</option>
-              <option value="Festival">Festival</option>
               <option value="Cultural">Cultural (legacy)</option>
               <option value="City">City (legacy)</option>
             </select>
@@ -9482,7 +9515,7 @@ function AdminRequestCard({ item, isJourney, onSave, onDelete }) {
   );
 }
 
-function Footer({ go }) {
+function Footer({ go, path }) {
   const [activePolicy, setActivePolicy] = useState(null);
   const closePolicy = useCallback(() => setActivePolicy(null), []);
 
@@ -9499,7 +9532,7 @@ function Footer({ go }) {
       <div>
         <b>About us</b>
         <button onClick={() => go("/about")}>Why choose us</button>
-        <button onClick={() => go("/tours")}>Tours</button>
+        {path !== "/about" && <button onClick={() => go("/tours")}>Tours</button>}
         <button onClick={() => go("/contact")}>Contact</button>
         <button type="button" onClick={() => setActivePolicy("terms")}>Terms &amp; Conditions</button>
         <button type="button" onClick={() => setActivePolicy("refund")}>Refund Policy</button>
@@ -9511,14 +9544,13 @@ function Footer({ go }) {
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
         <button onClick={() => go("/trips?category=South%20India")}>South India</button>
         <button onClick={() => go("/trips?category=North%20India")}>North India</button>
-        <button onClick={() => go("/tours?city=Mumbai&category=Community")}>Dharavi</button>
-        <button onClick={() => go("/tours/unique")}>Unique experiences</button>
+        <button onClick={() => go("/tours/unique")}>Festive Experiences</button>
       </div>
       <div className="footer-contact">
         <b>Contact & updates</b>
         <a href="mailto:wanderersnomad@gmail.com">wanderersnomad@gmail.com</a>
         <a href="tel:+919619952139">+91 96199 52139</a>
-        <span>Colaba Causeway, Mumbai</span>
+        <span>Dharavi, Mumbai, 400017</span>
         <div className="footer-socials">
           <a
             className="facebook"

@@ -42,6 +42,29 @@ provider credentials from `.env` or the process environment through
 should set the same names in the hosting platform's secret manager. For PayPal
 sandbox, use `PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com`.
 
+## INR and USD checkout
+
+Customers can select Indian Rupees (INR) or US Dollars (USD). Tour and booking
+prices remain stored in INR. USD payments are converted on the server using
+Frankfurter reference rates, rounded to cents, and created as USD Razorpay orders.
+Enable international payments on the Razorpay merchant account for USD checkout.
+
+`GET /api/exchange-rates` supplies the display rate. Authenticated customers use
+`GET /api/bookings/{booking_id}/payment-quote?currency=USD` (or `INR`) to confirm
+the amount before payment. The signed quote expires after ten minutes and is
+bound to the customer, booking, currency and saved booking total. Send its
+`amount`, `currency` and `quote_token` to `/api/create-order` alongside the booking
+ID, receipt and payment-terms acknowledgement. The server rejects modified or
+expired quotes. A rate outage prevents new USD quotes. Existing INR requests
+without a quote still work.
+
+Rate requests identify the application to Frankfurter and fall back to its v2
+INR/USD pair endpoint if the primary endpoint fails. Both responses are validated
+and cached for one hour; no guessed or expired cached rate is used for payments.
+
+Deploy the frontend and backend changes together. Restart the API after updating
+unless the development server is already running with `--reload`.
+
 ## Idempotency and booking safety
 
 Send a stable `Idempotency-Key` header (8-200 characters) when creating a
@@ -79,6 +102,65 @@ password=your_mysql_password
 The database starts empty—tours must be created from the admin dashboard. Schema and database access code are kept in `db_models.py`; API routes and authentication are in `main.py`.
 
 You may override these values with `MYSQL_DATABASE`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, and `MYSQL_PASSWORD`.
+
+### MySQL connection pooling
+
+All database helpers share one thread-safe Connector/Python pool per backend
+process. Connections are reused across requests; successful operations commit,
+failures roll back, and connections are reset and returned to the pool in either
+case. The pool is created on first use (normally during application startup).
+
+Configure these optional settings in `docker.env` when using Compose, or in the
+process environment / `backend/.env` when running Uvicorn directly:
+
+```env
+WEB_CONCURRENCY=2
+MYSQL_POOL_SIZE=30
+MYSQL_POOL_ACQUIRE_TIMEOUT=5
+MYSQL_CONNECT_TIMEOUT=10
+```
+
+`MYSQL_POOL_SIZE` defaults to 30 and accepts 1–32 connections per backend worker, following the
+[Connector/Python pool limits](https://dev.mysql.com/doc/connector-python/en/connector-python-connection-pooling.html).
+It limits concurrent database operations, not logged-in users. Extra operations
+wait up to `MYSQL_POOL_ACQUIRE_TIMEOUT` seconds for a free connection; if none
+becomes available, the API returns HTTP 503 with a retry message and
+`Retry-After: 1`. The wait timeout must be greater than zero and at most 60 seconds.
+`MYSQL_CONNECT_TIMEOUT` is the socket connection timeout in whole seconds (1–60).
+Session reset prevents a previous request's session settings from leaking into
+the next request.
+
+Each additional backend worker or replica has its own pool. Keep the combined
+pool sizes below MySQL's `max_connections`, leaving room for administration and
+other database clients. Docker defaults to two Uvicorn workers via
+`WEB_CONCURRENCY=2`, so the default database connection budget is 60 connections
+per backend container (2 workers × 30). Uvicorn reads this environment variable
+when `--workers` is not explicitly supplied. Do not use `--reload` in production.
+For direct Uvicorn commands, set `WEB_CONCURRENCY` in the process environment or
+pass `--workers 2`; putting it only in `backend/.env` is too late for Uvicorn's
+worker-manager configuration.
+
+Database initialization is serialized across workers and replicas with the MySQL
+advisory lock `nomad_wanderers_schema_init`. Each worker waits up to 30 seconds to
+enter schema setup. Successful initialization commits before releasing the lock;
+failed initialization rolls back and releases it before failing startup. This
+prevents simultaneous compatibility migrations and duplicate legacy-review
+migration. Ordinary API database operations do not acquire this startup lock.
+
+Before deploying, check server CPU/RAM, MySQL's `max_connections`, any account
+`MAX_USER_CONNECTIONS` cap, and the connection usage of other applications. Keep
+the previous backend image available for rollback. Restart the backend after
+changing worker or pool settings. To load
+this code into an existing Docker deployment, rebuild/recreate only the backend:
+
+```sh
+docker compose --env-file docker.env up --build --detach --no-deps backend
+```
+
+This does not remove database volumes; normal compatibility schema setup still
+runs during application startup. Pooling
+reduces connection setup overhead; it is not proof that the reported production
+failure above two users is resolved.
 
 This code change does not copy existing PostgreSQL data into MySQL. Migrate any existing records separately before switching production traffic.
 

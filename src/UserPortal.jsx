@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PaymentTermsAcceptance } from "./PaymentTerms";
 import { formatApiError } from "./apiError";
+import { PaymentQuoteStatus, paymentOrderDetails, usePaymentQuote } from "./PaymentQuote.jsx";
 
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` });
 const formatDate = (value) =>
@@ -9,7 +10,6 @@ const formatDate = (value) =>
     month: "short",
     year: "numeric",
   });
-const formatInr = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
 export default function UserPortal({
   apiBaseUrl,
@@ -369,6 +369,7 @@ export default function UserPortal({
       {paymentBooking && (
         <PaymentDetailsModal
           booking={paymentBooking}
+          customer={account}
           apiBaseUrl={apiBaseUrl}
           token={session.token}
           onPaymentComplete={(paidBooking) => {
@@ -442,16 +443,19 @@ function JourneyCard({ item, onPay, onDownload, expanded = false }) {
 
 function PaymentDetailsModal({
   booking,
+  customer,
   apiBaseUrl,
   token,
   onPaymentComplete,
   onClose,
 }) {
-  const amount = Number(booking.price || 0) * Number(booking.travellers || 1);
   const [paying, setPaying] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const verifyingPayment = useRef(false);
+  const { quote: paymentQuote, formattedAmount: paymentAmount, quoteError, refreshQuote } = usePaymentQuote({
+    apiBaseUrl, token, booking, enabled: !paying,
+  });
 
   const startCheckout = async () => {
     if (!termsAccepted) {
@@ -465,23 +469,13 @@ function PaymentDetailsModal({
       if (!window.Razorpay) {
         throw new Error("The Razorpay checkout could not be loaded. Please refresh and try again.");
       }
-      const paise = Math.round(amount * 100);
-      if (paise < 100) {
-        throw new Error("The payment amount must be at least ₹1.");
-      }
       const orderResponse = await fetch(`${apiBaseUrl}/api/create-order`, {
         method: "POST",
         headers: {
           ...authHeaders(token),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          booking_id: booking.id,
-          amount: paise,
-          currency: "INR",
-          receipt: `booking-${booking.id}`,
-          terms_accepted: true,
-        }),
+        body: JSON.stringify(paymentOrderDetails(booking.id, paymentQuote)),
       });
       const order = await orderResponse.json().catch(() => ({}));
       if (!orderResponse.ok) {
@@ -497,6 +491,7 @@ function PaymentDetailsModal({
         name: "Nomad Wanderers",
         description: `${booking.tour_title} · Booking #${booking.id}`,
         order_id: order.order_id,
+        prefill: { name: customer.name, email: customer.email, contact: booking.contact_phone || customer.phone },
         handler: async (payment) => {
           verifyingPayment.current = true;
           try {
@@ -580,7 +575,7 @@ function PaymentDetailsModal({
         </div>
         <div className="traveller-payment-summary">
           <span>Booking #{booking.id}</span>
-          <b>{formatInr(amount)}</b>
+          <b>{paymentQuote ? paymentAmount : quoteError ? "Payment amount unavailable" : "Preparing payment amount…"}</b>
           <small>
             {booking.travellers} traveller{booking.travellers > 1 ? "s" : ""} · {formatDate(booking.travel_date)}
           </small>
@@ -588,11 +583,12 @@ function PaymentDetailsModal({
         <div className="traveller-payment-note">
           <span className="material-symbols-outlined">verified_user</span>
           <p>
-            Razorpay opens a secure payment window where you can choose UPI,
-            card, or another available method.
+            Razorpay opens a secure payment window with the methods available
+            for your selected currency.
           </p>
         </div>
         {paymentError && <p className="form-status error">{paymentError}</p>}
+        <PaymentQuoteStatus error={quoteError} onRetry={refreshQuote} />
         <div className="traveller-payment-actions">
           <PaymentTermsAcceptance
             accepted={termsAccepted}
@@ -602,10 +598,10 @@ function PaymentDetailsModal({
           <button
             className="primary-button"
             type="button"
-            disabled={paying || !termsAccepted}
+            disabled={paying || !termsAccepted || !paymentQuote}
             onClick={startCheckout}
           >
-            {paying ? "Opening secure checkout…" : `Pay ${formatInr(amount)} securely`}
+            {paying ? "Opening secure checkout…" : paymentQuote ? `Pay ${paymentAmount} securely` : quoteError ? "Payment amount unavailable" : "Preparing payment amount…"}
           </button>
           <button className="outline-button" type="button" onClick={onClose}>
             Cancel

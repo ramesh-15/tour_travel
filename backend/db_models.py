@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +15,8 @@ from typing import Any, Generator
 
 import mysql.connector
 from mysql.connector.connection import MySQLConnection
+from mysql.connector.errors import PoolError
+from mysql.connector.pooling import CNX_POOL_MAXSIZE, MySQLConnectionPool, PooledMySQLConnection
 
 
 DB_ENV_PATH = Path(__file__).with_name("db.env")
@@ -23,6 +27,58 @@ TOUR_COLUMNS = (
     "languages", "physicality", "itinerary", "inclusion_groups", "exclusions", "pricing", "availability",
 )
 CAROUSEL_SETTING_KEY = "home_carousel_tour_ids"
+DatabaseConnection = MySQLConnection | PooledMySQLConnection
+
+
+class DatabasePoolBusy(RuntimeError):
+    """A database connection could not be checked out within the allowed wait."""
+
+
+def _positive_integer_setting(name: str, default: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be an integer between 1 and {maximum}.") from error
+    if not 1 <= value <= maximum:
+        raise RuntimeError(f"{name} must be an integer between 1 and {maximum}.")
+    return value
+
+
+class _DatabasePool:
+    def __init__(self) -> None:
+        size = _positive_integer_setting("MYSQL_POOL_SIZE", 30, CNX_POOL_MAXSIZE)
+        connect_timeout = _positive_integer_setting("MYSQL_CONNECT_TIMEOUT", 10, 60)
+        try:
+            acquire_timeout = float(os.getenv("MYSQL_POOL_ACQUIRE_TIMEOUT", "5"))
+        except ValueError as error:
+            raise RuntimeError("MYSQL_POOL_ACQUIRE_TIMEOUT must be greater than 0 and at most 60 seconds.") from error
+        if not math.isfinite(acquire_timeout) or not 0 < acquire_timeout <= 60:
+            raise RuntimeError("MYSQL_POOL_ACQUIRE_TIMEOUT must be greater than 0 and at most 60 seconds.")
+        self.acquire_timeout = acquire_timeout
+        # Connector/Python raises immediately when exhausted. Bound concurrent
+        # checkouts here so brief bursts can wait for a returned connection.
+        self.slots = threading.BoundedSemaphore(size)
+        self.connections = MySQLConnectionPool(
+            pool_name="nomad_wanderers",
+            pool_size=size,
+            pool_reset_session=True,
+            connection_timeout=connect_timeout,
+            **_mysql_config(),
+        )
+
+
+_database_pool: _DatabasePool | None = None
+_database_pool_lock = threading.Lock()
+
+
+def _get_database_pool() -> _DatabasePool:
+    """Create one pool per backend process, not one pool per request."""
+    global _database_pool
+    if _database_pool is None:
+        with _database_pool_lock:
+            if _database_pool is None:
+                _database_pool = _DatabasePool()
+    return _database_pool
 
 
 def _load_db_env() -> dict[str, str]:
@@ -61,19 +117,40 @@ def _mysql_config() -> dict[str, Any]:
 
 
 @contextmanager
-def database() -> Generator[MySQLConnection, None, None]:
-    connection = mysql.connector.connect(**_mysql_config())
+def database(*, advisory_lock: str | None = None) -> Generator[DatabaseConnection, None, None]:
+    pool = _get_database_pool()
+    if not pool.slots.acquire(timeout=pool.acquire_timeout):
+        raise DatabasePoolBusy("The database is busy. Please try again shortly.")
     try:
-        yield connection
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
+        try:
+            connection = pool.connections.get_connection()
+        except PoolError as error:
+            raise DatabasePoolBusy("The database is busy. Please try again shortly.") from error
+        lock_acquired = False
+        try:
+            if advisory_lock is not None:
+                lock = _fetch_one(connection, "SELECT GET_LOCK(%s, 30) AS acquired", (advisory_lock,))
+                if not lock or lock.get("acquired") != 1:
+                    raise RuntimeError("Database initialization is busy. Please retry startup.")
+                lock_acquired = True
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            try:
+                if lock_acquired:
+                    # Commit/rollback must finish before another worker enters.
+                    _fetch_one(connection, "SELECT RELEASE_LOCK(%s) AS released", (advisory_lock,))
+            finally:
+                # Pooled close() resets the session and returns the connection.
+                connection.close()
     finally:
-        connection.close()
+        pool.slots.release()
 
 
-def _execute(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
+def _execute(connection: DatabaseConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
     cursor = connection.cursor()
     try:
         cursor.execute(query, parameters)
@@ -82,7 +159,7 @@ def _execute(connection: MySQLConnection, query: str, parameters: tuple[Any, ...
         cursor.close()
 
 
-def _insert_and_get_id(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
+def _insert_and_get_id(connection: DatabaseConnection, query: str, parameters: tuple[Any, ...] = ()) -> int:
     cursor = connection.cursor()
     try:
         cursor.execute(query, parameters)
@@ -93,7 +170,7 @@ def _insert_and_get_id(connection: MySQLConnection, query: str, parameters: tupl
         cursor.close()
 
 
-def _fetch_one(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+def _fetch_one(connection: DatabaseConnection, query: str, parameters: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     # Buffered cursors consume the result set, which prevents mysql-connector's
     # "Unread result found" error when this cursor is closed.
     cursor = connection.cursor(dictionary=True, buffered=True)
@@ -104,7 +181,7 @@ def _fetch_one(connection: MySQLConnection, query: str, parameters: tuple[Any, .
         cursor.close()
 
 
-def _fetch_all(connection: MySQLConnection, query: str, parameters: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+def _fetch_all(connection: DatabaseConnection, query: str, parameters: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     cursor = connection.cursor(dictionary=True, buffered=True)
     try:
         cursor.execute(query, parameters)
@@ -117,7 +194,7 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _ensure_index(connection: MySQLConnection, table: str, index_name: str, columns: str, unique: bool = False) -> None:
+def _ensure_index(connection: DatabaseConnection, table: str, index_name: str, columns: str, unique: bool = False) -> None:
     existing = _fetch_one(
         connection,
         """SELECT 1 FROM information_schema.statistics
@@ -129,7 +206,7 @@ def _ensure_index(connection: MySQLConnection, table: str, index_name: str, colu
         _execute(connection, f"CREATE {prefix}INDEX {index_name} ON {table} ({columns})")
 
 
-def _ensure_column(connection: MySQLConnection, table: str, column: str, definition: str) -> None:
+def _ensure_column(connection: DatabaseConnection, table: str, column: str, definition: str) -> None:
     existing = _fetch_one(
         connection,
         """SELECT 1 FROM information_schema.columns
@@ -342,7 +419,9 @@ def initialize_database() -> None:
         )
         """,
     )
-    with database() as connection:
+    # GET_LOCK is shared by all workers/replicas using this MySQL server.
+    # It also protects the legacy data migration, not just CREATE/ALTER calls.
+    with database(advisory_lock="nomad_wanderers_schema_init") as connection:
         for statement in statements:
             _execute(connection, statement)
         # Compatibility additions for databases created by earlier releases.
@@ -408,7 +487,7 @@ def initialize_database() -> None:
         _migrate_legacy_tour_reviews(connection)
 
 
-def _migrate_legacy_tour_reviews(connection: MySQLConnection) -> None:
+def _migrate_legacy_tour_reviews(connection: DatabaseConnection) -> None:
     """Move reviews from the old tours JSON column into the related table once."""
     rows = _fetch_all(connection, "SELECT id, review_items FROM tours")
     now = _utc_now()
@@ -521,7 +600,7 @@ def _request_hash(data: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
 
 
-def _claim_idempotency(connection: MySQLConnection, user_id: int, operation: str, key: str | None, data: dict[str, Any]) -> int | None:
+def _claim_idempotency(connection: DatabaseConnection, user_id: int, operation: str, key: str | None, data: dict[str, Any]) -> int | None:
     if not key:
         return None
     digest = _request_hash(data)
@@ -544,7 +623,7 @@ def _claim_idempotency(connection: MySQLConnection, user_id: int, operation: str
     return None
 
 
-def _complete_idempotency(connection: MySQLConnection, user_id: int, operation: str, key: str | None, resource_id: int) -> None:
+def _complete_idempotency(connection: DatabaseConnection, user_id: int, operation: str, key: str | None, resource_id: int) -> None:
     if key:
         _execute(connection, "UPDATE idempotency_keys SET resource_id = %s WHERE user_id = %s AND operation = %s AND idempotency_key = %s", (resource_id, user_id, operation, key))
 
@@ -567,7 +646,7 @@ def _review_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _attach_tour_reviews(connection: MySQLConnection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _attach_tour_reviews(connection: DatabaseConnection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tours = [row_to_dict(row) for row in rows]
     if not tours:
         return tours
@@ -638,7 +717,7 @@ def get_tour(tour_id: int) -> dict[str, Any] | None:
     return tours[0] if tours else None
 
 
-def _sync_tour_reviews(connection: MySQLConnection, tour_id: int, items: list[dict[str, Any]]) -> None:
+def _sync_tour_reviews(connection: DatabaseConnection, tour_id: int, items: list[dict[str, Any]]) -> None:
     existing_rows = _fetch_all(
         connection,
         "SELECT id, show_on_home FROM reviews WHERE tour_id = %s",
@@ -1501,6 +1580,7 @@ def paginate_public_tours(
 ) -> tuple[list[dict[str, Any]], int]:
     clauses = ["published = TRUE"]
     parameters: list[Any] = []
+    normalized_category = str(category or "").strip().lower()
     for column, value in (("city", city), ("trip_type", trip_type)):
         if value:
             clauses.append(f"LOWER({column}) = LOWER(%s)")
@@ -1520,13 +1600,21 @@ def paginate_public_tours(
             parameters.append(normalized_mode)
     if multi_day:
         clauses.append("trip_type IN ('Weekly trip', 'Multi-day trip')")
-    elif not trip_type:
+    elif not trip_type and normalized_category not in {"festival", "unique"}:
         clauses.append("trip_type NOT IN ('Weekly trip', 'Multi-day trip')")
     if category:
-        clauses.append(
-            "(LOWER(category) = LOWER(%s) OR JSON_CONTAINS(categories, JSON_QUOTE(%s)))"
-        )
-        parameters.extend((category, category))
+        category_values = [category]
+        # ``Unique`` was the former label for festival tours. Match it while
+        # existing records transition to the new Festival category.
+        if normalized_category == "festival":
+            category_values.append("Unique")
+        category_clauses = []
+        for category_value in category_values:
+            category_clauses.append(
+                "(LOWER(category) = LOWER(%s) OR JSON_CONTAINS(categories, JSON_QUOTE(%s)))"
+            )
+            parameters.extend((category_value, category_value))
+        clauses.append(f"({' OR '.join(category_clauses)})")
     if search:
         clauses.append("LOWER(CONCAT_WS(' ', title, description, city, category, categories, mode, trip_type)) LIKE LOWER(%s)")
         parameters.append(f"%{search.strip()}%")

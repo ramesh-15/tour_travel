@@ -20,8 +20,9 @@ from typing import Generic, Literal, TypeVar
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
@@ -29,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 import db_models
 import config
 import whatsapp
+import payment_currency
 
 
 ENV_PATH = Path(__file__).with_name(".env")
@@ -410,10 +412,19 @@ class RazorpayCreateOrderInput(BaseModel):
     """Checkout order details, bound to a booking owned by the customer."""
 
     booking_id: int = Field(gt=0)
-    amount: int = Field(ge=100, le=1_000_000_000, description="Amount in paise")
+    amount: int = Field(ge=100, le=1_000_000_000, description="Amount in paise (INR) or cents (USD)")
     currency: str = Field(default="INR", min_length=3, max_length=3)
     receipt: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_@.\-/]+$")
     terms_accepted: bool = Field(description="Customer acknowledgement of the payment terms")
+    quote_token: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
+class PaymentQuote(BaseModel):
+    booking_id: int
+    amount: int
+    currency: Literal["INR", "USD"]
+    expires_at: int
+    quote_token: str
 
 
 class RazorpayOrder(BaseModel):
@@ -551,6 +562,73 @@ def booking_amount_in_paise(booking: dict[str, object]) -> int:
     return int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def get_payable_booking(booking_id: int, user_id: int) -> dict[str, object]:
+    booking = db_models.get_booking(booking_id)
+    if not booking or int(booking["user_id"]) != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    if booking["booking_status"] == "cancelled":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancelled bookings cannot be paid")
+    if booking["payment_status"] == "paid":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This booking has already been paid")
+    return booking
+
+
+def payment_quote_signature(payload: str) -> str:
+    if not config.RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=503, detail="Razorpay is not configured.")
+    return base64url_encode(hmac.new(
+        config.RAZORPAY_KEY_SECRET.encode(),
+        f"nomad-payment-quote:{payload}".encode(),
+        hashlib.sha256,
+    ).digest())
+
+
+def create_payment_quote(booking: dict[str, object], user_id: int, currency: str) -> PaymentQuote:
+    if currency not in {"INR", "USD"}:
+        raise HTTPException(status_code=422, detail="Choose INR or USD for payment.")
+    base_amount = booking_amount_in_paise(booking)
+    try:
+        rate = payment_currency.get_usd_exchange_rate()[0] if currency == "USD" else None
+        amount = payment_currency.payment_amount_in_subunits(base_amount, currency, rate)
+    except payment_currency.ExchangeRateUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if amount < 100 or amount > 1_000_000_000:
+        raise HTTPException(status_code=422, detail=f"Payment amount is outside the supported range for {currency}.")
+    expires_at = int(datetime.now(timezone.utc).timestamp()) + 600
+    claims = {
+        "booking_id": int(booking["id"]), "user_id": user_id, "currency": currency,
+        "amount": amount, "base_amount": base_amount, "expires_at": expires_at,
+    }
+    payload = base64url_encode(json.dumps(claims, separators=(",", ":")).encode())
+    return PaymentQuote(
+        booking_id=int(booking["id"]), amount=amount, currency=currency, expires_at=expires_at,
+        quote_token=f"{payload}.{payment_quote_signature(payload)}",
+    )
+
+
+def validate_payment_quote(data: RazorpayCreateOrderInput, booking: dict[str, object], user_id: int) -> int:
+    try:
+        payload, signature = (data.quote_token or "").split(".")
+        if not hmac.compare_digest(signature, payment_quote_signature(payload)):
+            raise ValueError("Invalid signature")
+        claims = json.loads(base64url_decode(payload))
+        if (
+            not isinstance(claims, dict)
+            or claims.get("booking_id") != int(booking["id"])
+            or claims.get("user_id") != user_id
+            or claims.get("currency") != data.currency.upper()
+            or claims.get("base_amount") != booking_amount_in_paise(booking)
+            or claims.get("amount") != data.amount
+            or not isinstance(claims.get("expires_at"), int)
+        ):
+            raise ValueError("Quote does not match booking")
+    except (ValueError, TypeError, binascii.Error, UnicodeDecodeError) as error:
+        raise HTTPException(status_code=422, detail="Invalid payment quote. Refresh the payment amount before trying again.") from error
+    if claims["expires_at"] <= datetime.now(timezone.utc).timestamp():
+        raise HTTPException(status_code=409, detail="Payment quote expired. Refresh the payment amount before trying again.")
+    return data.amount
+
+
 def create_razorpay_order_request(amount: int, currency: str, receipt: str) -> dict[str, object]:
     """Create a Razorpay order with server-only Basic authentication."""
     if not config.RAZORPAY_KEY_ID or not config.RAZORPAY_KEY_SECRET:
@@ -589,7 +667,12 @@ def create_razorpay_order_request(amount: int, currency: str, receipt: str) -> d
             detail="Unable to reach Razorpay. Please try again.",
         ) from error
 
-    if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("id"), str)
+        or payload.get("amount") != amount
+        or payload.get("currency") != currency
+    ):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Razorpay returned an invalid order response.",
@@ -614,6 +697,15 @@ app.add_middleware(
 )
 TOUR_UPLOADS_PATH.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads/tours", StaticFiles(directory=TOUR_UPLOADS_PATH), name="tour-uploads")
+
+
+@app.exception_handler(db_models.DatabasePoolBusy)
+async def database_pool_busy_handler(_request: Request, _error: db_models.DatabasePoolBusy) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "The service is busy. Please try again shortly."},
+        headers={"Retry-After": "1"},
+    )
 
 
 @app.on_event("startup")
@@ -876,19 +968,35 @@ def list_my_bookings(user: dict[str, object] = Depends(customer_required)) -> li
     return [Booking(**booking) for booking in db_models.list_user_bookings(int(user["id"]))]
 
 
+@app.get("/api/exchange-rates")
+def get_exchange_rates() -> dict[str, object]:
+    try:
+        rate, observed_date = payment_currency.get_usd_exchange_rate()
+    except payment_currency.ExchangeRateUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return {"amount": 1, "base": "INR", "date": observed_date, "rates": {"USD": float(rate)}}
+
+
+@app.get("/api/bookings/{booking_id}/payment-quote", response_model=PaymentQuote)
+def get_booking_payment_quote(
+    booking_id: int,
+    response: Response,
+    currency: Literal["INR", "USD"] = Query(default="INR"),
+    user: dict[str, object] = Depends(customer_required),
+) -> PaymentQuote:
+    response.headers["Cache-Control"] = "no-store"
+    user_id = int(user["id"])
+    booking = get_payable_booking(booking_id, user_id)
+    return create_payment_quote(booking, user_id, currency)
+
+
 @app.post("/api/create-order", response_model=RazorpayOrder)
 def create_razorpay_order(
     data: RazorpayCreateOrderInput,
     user: dict[str, object] = Depends(customer_required),
 ) -> RazorpayOrder:
     """Create a Razorpay Standard Checkout order for the customer's booking."""
-    booking = db_models.get_booking(data.booking_id)
-    if not booking or int(booking["user_id"]) != int(user["id"]):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    if booking["booking_status"] == "cancelled":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancelled bookings cannot be paid")
-    if booking["payment_status"] == "paid":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This booking has already been paid")
+    booking = get_payable_booking(data.booking_id, int(user["id"]))
     if not data.terms_accepted:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -896,13 +1004,17 @@ def create_razorpay_order(
         )
 
     currency = data.currency.upper()
-    if currency != "INR":
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Bookings can only be paid in INR")
-    expected_amount = booking_amount_in_paise(booking)
-    if expected_amount < 100:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Razorpay payments must be at least 100 paise")
-    if data.amount != expected_amount:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Payment amount does not match this booking")
+    if currency not in {"INR", "USD"}:
+        raise HTTPException(status_code=422, detail="Choose INR or USD for payment.")
+    if data.quote_token:
+        expected_amount = validate_payment_quote(data, booking, int(user["id"]))
+    elif currency == "USD":
+        raise HTTPException(status_code=422, detail="A server-confirmed quote is required for dollar payments.")
+    else:
+        # Preserve compatibility with existing INR clients during rollout.
+        expected_amount = booking_amount_in_paise(booking)
+        if data.amount != expected_amount:
+            raise HTTPException(status_code=422, detail="Payment amount does not match this booking")
 
     razorpay_order = create_razorpay_order_request(expected_amount, currency, data.receipt)
     order_id = razorpay_order["id"]
