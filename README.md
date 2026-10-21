@@ -1,4 +1,4 @@
-# Nomad Wanderers Frontend
+# Nomad Wanderers Frontend  
 
 The frontend is a React and Vite single-page application for browsing tours, contacting the team, and accessing the private admin area. The admin UI communicates with the FastAPI service in [`backend/`](backend/README.md).
 
