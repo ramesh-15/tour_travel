@@ -1263,39 +1263,16 @@ def verify_razorpay_payment(
             booking["id"],
             email_sent,
         )
-
-        # LOGGER.info(
-        #     "Booking confirmation email result: booking_id=%s success=%s",
-        #     booking["id"],
-        #     email_sent,
-        # )
-    # Messaging cannot change the outcome of a verified payment. Any
-    # provider error is recorded for staff to resend later.
-    
-    # LOGGER.info(
-    #     "Booking confirmation email requested: booking_id=%s customer_email=%s",
-    #     booking_id,
-    #     customer_email or "<missing>",
-    # )
-    # LOGGER.info("customer details: %s  ", customer)
-    # LOGGER.info("customer details: %s  ", customer)
-    # LOGGER.info("newly_verified details: %s  ", newly_verified)
-    # deliver_email_booking_confirmation(
-    #     booking,
-    #     str(booking.get("customer_email") or ""),
-    #     None,
-    # )
-
-    try:
-        deliver_booking_whatsapp_confirmations(
-            booking,
-            str((customer or {}).get("phone", "")),
-            None,
-        )
-    except ValueError:
-        # A legacy booking might not yet have a saved contact number.
-        # Never turn a successfully paid booking into a failed response.
-        pass
+        try:
+            deliver_booking_whatsapp_confirmations(
+                booking,
+                str((customer or {}).get("phone", "")),
+                None,
+            )
+        except ValueError:
+            # A legacy booking might not yet have a saved contact number.
+            # Never turn a successfully paid booking into a failed response.
+            pass
     return RazorpayVerificationResult(success=True, booking=Booking(**booking))
 
 

@@ -130,7 +130,7 @@ class DirectEmailConfirmationTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         email.assert_not_called()
-        whatsapp.assert_called_once_with(BOOKING, "+919876543210", None)
+        whatsapp.assert_not_called()
 
     def test_staff_resend_reports_immediate_email_delivery(self) -> None:
         with (
