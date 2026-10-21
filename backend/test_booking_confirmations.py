@@ -77,7 +77,7 @@ class DirectEmailConfirmationTests(unittest.TestCase):
         self.assertEqual(result, failed_notification)
         update.assert_called_once_with(9, "failed")
 
-    def test_newly_verified_payment_hands_email_to_smtp_once(self) -> None:
+    def test_newly_verified_payment_uses_current_customer_email_flow_once(self) -> None:
         secret = "test-razorpay-secret"
         order_id = "order_123"
         payment_id = "pay_123"
@@ -93,13 +93,18 @@ class DirectEmailConfirmationTests(unittest.TestCase):
             patch.object(config, "RAZORPAY_KEY_SECRET", secret),
             patch("main.db_models.complete_razorpay_payment", return_value=(BOOKING, True)),
             patch("main.db_models.get_user", return_value={"phone": "+919876543210"}),
-            patch("main.deliver_email_booking_confirmation", return_value={"delivery_status": "sent"}) as email,
+            patch("main.send_email_to_customer", return_value=True) as email,
             patch("main.deliver_booking_whatsapp_confirmations", return_value=[]) as whatsapp,
         ):
             result = main.verify_razorpay_payment(request, {"id": 7})
 
         self.assertTrue(result.success)
-        email.assert_called_once_with(BOOKING, "asha@example.com", None)
+        email.assert_called_once_with(
+            booking=BOOKING,
+            customer={"phone": "+919876543210"},
+            max_attempts=3,
+            retry_delay=5,
+        )
         whatsapp.assert_called_once_with(BOOKING, "+919876543210", None)
 
     def test_repeated_verified_payment_does_not_send_a_duplicate_email(self) -> None:
@@ -117,7 +122,7 @@ class DirectEmailConfirmationTests(unittest.TestCase):
         with (
             patch.object(config, "RAZORPAY_KEY_SECRET", secret),
             patch("main.db_models.complete_razorpay_payment", return_value=(BOOKING, False)),
-            patch("main.deliver_email_booking_confirmation") as email,
+            patch("main.send_email_to_customer") as email,
             patch("main.deliver_booking_whatsapp_confirmations") as whatsapp,
         ):
             result = main.verify_razorpay_payment(request, {"id": 7})
