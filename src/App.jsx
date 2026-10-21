@@ -584,7 +584,7 @@ function App() {
       {page}
       {!showingLogin && (
         <>
-          <Footer go={go} path={path} />
+          <Footer go={go} />
           <a
             className="floating-whatsapp"
             href={`https://wa.me/${businessWhatsAppNumber}?text=Hello%20Nomad%20Wanderers%2C%20I%20would%20like%20to%20plan%20a%20tour.`}
@@ -4157,15 +4157,12 @@ function TourDetail({
   const bookingModeLabel = getTourTravelStyleLabel(tour, durationOptionId);
   const sharedPrice = bookingPrices.shared;
   const privatePrice = bookingPrices.private;
-  const selectedBookingTiers = selectedBookingMode === "Private"
-    ? bookingPrices.privateTiers
-    : bookingPrices.sharedTiers;
-  const onePersonTier = selectedBookingTiers.find(
-    (tier) => Number(tier.travellers) === 1,
-  );
-  const selectedBookingPrice = Number(onePersonTier?.price_per_person) || (
-    selectedBookingMode === "Private" ? privatePrice : sharedPrice
-  );
+  const selectedBookingPrice = selectedBookingMode === "Private"
+    ? privatePrice
+    : sharedPrice;
+  const selectedBookingTierCount = selectedBookingMode === "Private"
+    ? bookingPrices.privateTiers.length
+    : bookingPrices.sharedTiers.length;
   const groupPriceTables = [
     selectedBookingMode === "Shared" && availableBookingModes.includes("Shared") && {
       label: "Shared tour",
@@ -4373,7 +4370,7 @@ function TourDetail({
           {selectedBookingPrice > 0 && (
             <div className="price">
               <small>
-                {selectedBookingMode} tour{onePersonTier ? " · 1 person" : ""}
+                {selectedBookingMode} tour{selectedBookingTierCount ? " · from" : ""}
               </small>
               <b className="booking-price-by-mode"><Money amount={selectedBookingPrice} /></b>
               <span>per person</span>
@@ -9597,7 +9594,7 @@ function AdminRequestCard({ item, isJourney, onSave, onDelete }) {
   );
 }
 
-function Footer({ go, path }) {
+function Footer({ go }) {
   const [activePolicy, setActivePolicy] = useState(null);
   const closePolicy = useCallback(() => setActivePolicy(null), []);
 
@@ -9613,14 +9610,14 @@ function Footer({ go, path }) {
         <button type="button" onClick={() => setActivePolicy("refund")}>Refund Policy</button>
         <button type="button" onClick={() => setActivePolicy("privacy")}>Privacy Policy</button>
       </div>
-      {path !== "/about" && <div>
+      <div>
         <b>Top destinations</b>
         <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
         <button onClick={() => go("/trips?category=South%20India")}>South India</button>
         <button onClick={() => go("/trips?category=North%20India")}>North India</button>
         <button onClick={() => go("/tours/unique")}>Festival Experiences</button>
-      </div>}
+      </div>
       <div className="footer-contact">
         <b>Contact & updates</b>
         <a href="mailto:wanderersnomad@gmail.com">wanderersnomad@gmail.com</a>
