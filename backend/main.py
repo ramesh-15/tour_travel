@@ -1258,7 +1258,6 @@ def verify_razorpay_payment(
             max_attempts=3,
             retry_delay=5,
         )
-
         LOGGER.info(
             "Booking confirmation email result: booking_id=%s success=%s",
             booking["id"],

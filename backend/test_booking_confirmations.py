@@ -122,6 +122,7 @@ class DirectEmailConfirmationTests(unittest.TestCase):
         with (
             patch.object(config, "RAZORPAY_KEY_SECRET", secret),
             patch("main.db_models.complete_razorpay_payment", return_value=(BOOKING, False)),
+            patch("main.db_models.get_user", return_value={"phone": "+919876543210"}),
             patch("main.send_email_to_customer") as email,
             patch("main.deliver_booking_whatsapp_confirmations") as whatsapp,
         ):
@@ -129,7 +130,7 @@ class DirectEmailConfirmationTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         email.assert_not_called()
-        whatsapp.assert_not_called()
+        whatsapp.assert_called_once_with(BOOKING, "+919876543210", None)
 
     def test_staff_resend_reports_immediate_email_delivery(self) -> None:
         with (
