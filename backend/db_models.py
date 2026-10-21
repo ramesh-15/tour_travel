@@ -294,6 +294,17 @@ def initialize_database() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS blogs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            description TEXT NOT NULL,
+            image_url VARCHAR(2048) NOT NULL,
+            published BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at DATETIME(6) NOT NULL,
+            updated_at DATETIME(6) NOT NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS revoked_tokens (
             token_hash CHAR(64) NOT NULL PRIMARY KEY,
             expires_at BIGINT NOT NULL,
@@ -584,6 +595,42 @@ def save_carousel_tour_ids(tour_ids: list[int]) -> list[int]:
             (CAROUSEL_SETTING_KEY, json.dumps(normalized), _utc_now()),
         )
     return normalized
+
+
+def list_blogs(include_unpublished: bool = False) -> list[dict[str, Any]]:
+    query = "SELECT * FROM blogs"
+    if not include_unpublished:
+        query += " WHERE published = TRUE"
+    query += " ORDER BY created_at DESC"
+    with database() as connection:
+        return _fetch_all(connection, query)
+
+
+def get_blog(blog_id: int) -> dict[str, Any] | None:
+    with database() as connection:
+        return _fetch_one(connection, "SELECT * FROM blogs WHERE id = %s", (blog_id,))
+
+
+def save_blog(data: dict[str, Any], blog_id: int | None = None) -> dict[str, Any] | None:
+    now = _utc_now()
+    fields = ("title", "description", "image_url", "published")
+    values = tuple(data[field] for field in fields)
+    with database() as connection:
+        if blog_id is None:
+            blog_id = _insert_and_get_id(
+                connection,
+                "INSERT INTO blogs (title, description, image_url, published, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (*values, now, now),
+            )
+        else:
+            if not _execute(connection, "UPDATE blogs SET title=%s, description=%s, image_url=%s, published=%s, updated_at=%s WHERE id=%s", (*values, now, blog_id)):
+                return None
+    return get_blog(blog_id)
+
+
+def delete_blog(blog_id: int) -> bool:
+    with database() as connection:
+        return bool(_execute(connection, "DELETE FROM blogs WHERE id = %s", (blog_id,)))
 
 
 def list_carousel_tours() -> list[dict[str, Any]]:

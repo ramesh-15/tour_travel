@@ -351,6 +351,19 @@ class AdminCarouselResponse(BaseModel):
     tours: list[Tour]
 
 
+class BlogInput(BaseModel):
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=10, max_length=10000)
+    image_url: HttpUrl
+    published: bool = True
+
+
+class Blog(BlogInput):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class AdminReviewList(BaseModel):
     items: list[TourReview]
     total: int
@@ -802,6 +815,35 @@ def health() -> dict[str, str]:
 @app.get("/api/home-carousel", response_model=list[Tour])
 def get_home_carousel() -> list[Tour]:
     return [Tour(**tour) for tour in db_models.list_carousel_tours()]
+
+
+@app.get("/api/blogs", response_model=list[Blog])
+def list_blogs() -> list[Blog]:
+    return [Blog(**blog) for blog in db_models.list_blogs()]
+
+
+@app.get("/api/admin/blogs", response_model=list[Blog], dependencies=[Depends(admin_required)])
+def list_admin_blogs() -> list[Blog]:
+    return [Blog(**blog) for blog in db_models.list_blogs(include_unpublished=True)]
+
+
+@app.post("/api/admin/blogs", response_model=Blog, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_required)])
+def create_blog(data: BlogInput) -> Blog:
+    return Blog(**db_models.save_blog(data.model_dump(mode="json")))
+
+
+@app.put("/api/admin/blogs/{blog_id}", response_model=Blog, dependencies=[Depends(admin_required)])
+def update_blog(blog_id: int, data: BlogInput) -> Blog:
+    blog = db_models.save_blog(data.model_dump(mode="json"), blog_id)
+    if not blog:
+        raise HTTPException(status_code=404, detail="Blog not found")
+    return Blog(**blog)
+
+
+@app.delete("/api/admin/blogs/{blog_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_required)])
+def delete_blog(blog_id: int) -> None:
+    if not db_models.delete_blog(blog_id):
+        raise HTTPException(status_code=404, detail="Blog not found")
 
 
 @app.get("/api/home-reviews", response_model=list[TourReview])

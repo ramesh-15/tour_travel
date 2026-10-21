@@ -552,6 +552,8 @@ function App() {
     <TourDetail go={go} session={userSession} initialBooking={new URLSearchParams(query).get("booking") === "1"} />
   ) : /^\/tours\/\d+$/.test(path) ? (
     <TourDetail go={go} session={userSession} initialBooking={new URLSearchParams(query).get("booking") === "1"} tourId={Number(path.split("/").pop())} />
+  ) : path === "/blog" ? (
+    <BlogPage />
   ) : path === "/contact" ? (
     <ContactFlowV2 session={userSession} />
   ) : (
@@ -1006,7 +1008,7 @@ function Header({
                 </div>
                 <span className="dropdown-divider" />
                 <button onClick={() => selectTour("/tours/unique")}>
-                  Festival Experiences
+                  Festive Experiences
                 </button>
               </div>
             )}
@@ -1051,6 +1053,7 @@ function Header({
           </div>
           {link("About", "/", false)}
           {link("Contact", "/contact", path === "/contact")}
+          {link("Blog", "/blog", path === "/blog")}
         </div>
         <div className="mobile-quick-actions" aria-label="Quick contact actions">
           <button onClick={() => go("/tours")} aria-label="Search tours">
@@ -1168,7 +1171,7 @@ function Header({
               className={path === "/tours/unique" ? "active trip-option" : "trip-option"}
               onClick={() => mobileNavigate("/tours/unique")}
             >
-              Festival Experiences
+              Festive Experiences
             </button>
             <span>Multi-day Tours</span>
             <button
@@ -1207,6 +1210,12 @@ function Header({
             >
               Contact
             </button>
+            <button
+              className={path === "/blog" ? "active" : ""}
+              onClick={() => mobileNavigate("/blog")}
+            >
+              Blog
+            </button>
           </div>
         )}
       </nav>
@@ -1229,7 +1238,73 @@ function Hero({ children, image = images.gateway, className = "" }) {
 function Eyebrow({ children }) {
   return <div className="eyebrow">{children}</div>;
 }
-function About({ go }) {
+function BlogPage() {
+  const [blogs, setBlogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${apiBaseUrl}/api/blogs`, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json().catch(() => []);
+        if (!response.ok) throw new Error(formatApiError(body.detail, "Unable to load blog posts."));
+        if (active) setBlogs(Array.isArray(body) ? body : []);
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <main className="top-space blog-page">
+      <section className="blog-page-hero">
+        <div>
+          <Eyebrow>Nomad journal</Eyebrow>
+          <h1>Stories, places & travel inspiration.</h1>
+          <p>Discover India through local insight, memorable journeys, and the people who make every place special.</p>
+        </div>
+      </section>
+      <section className="section blog-page-content">
+        {loading ? (
+          <p className="lead">Loading stories...</p>
+        ) : error ? (
+          <p className="form-error">{error}</p>
+        ) : blogs.length ? (
+          <div className="blog-grid">
+            {blogs.map((blog) => (
+              <article className="blog-card" key={blog.id}>
+                <img src={blog.image_url} alt={blog.title} />
+                <div className="blog-card-copy">
+                  <p className="blog-card-date">
+                    {blog.created_at
+                      ? new Date(blog.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+                      : "Nomad Wanderers"}
+                  </p>
+                  <h2>{blog.title}</h2>
+                  <p>{blog.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="blog-empty">
+            <h2>Stories are coming soon.</h2>
+            <p>Check back soon for travel ideas and local perspectives from Nomad Wanderers.</p>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function About() {
   const principles = [
     [
       "verified",
@@ -1283,18 +1358,6 @@ function About({ go }) {
         <div className="about-copy">
           <Eyebrow>Founded in Mumbai</Eyebrow>
           <h2>Built from a love of showing people the real city.</h2>
-          <p>
-            Nomad Wanderers began with Raj, a Mumbai local who spent years
-            guiding visitors beyond the familiar postcard views. What started as
-            one person sharing the streets he knows by heart has grown into a
-            close-knit team of hosts, planners, and local experts.
-          </p>
-          <p>
-            We still work the same way: listen closely, recommend honestly, and
-            make every journey feel personal. From a first morning in Mumbai to
-            a multi-day route across India, we care about the stories that stay
-            with you after the photographs are packed away.
-          </p>
           <p>
             Nomad Wanderers began with a simple idea—to share the real India
             through the eyes of those who call it home. Founded by Rajesh,
@@ -1362,6 +1425,24 @@ function About({ go }) {
           </blockquote>
           <p>— Raj, Founder</p>
         </div>
+      </section>
+    </main>
+  );
+}
+
+function SimplifiedAbout() {
+  return (
+    <main className="top-space">
+      <section className="section about-copy about-page-copy">
+        <p>
+          Nomad Wanderers began with a simple idea—to share the real India through the eyes of those who call it home. Founded by Rajesh, better known as Raj, who was born and raised in Dharavi, Mumbai, the journey started with a passion for introducing travellers to his community beyond stereotypes and headlines.
+        </p>
+        <p>
+          Over the past 12+ years, that passion has grown into a deep understanding of India&apos;s history, culture, and diverse traditions. From leading immersive experiences through Mumbai to exploring the ancient wonders of Ajanta and Ellora and designing journeys across North and South India, Raj&apos;s vision has remained the same—to help travellers experience India beyond the guidebooks.
+        </p>
+        <p>
+          Today, Nomad Wanderers creates thoughtfully curated private journeys that connect visitors with India&apos;s iconic landmarks, hidden gems, local communities, and authentic everyday life. Every experience is built on genuine local knowledge, meaningful connections, and the stories, people, and traditions that make India truly extraordinary.
+        </p>
       </section>
     </main>
   );
@@ -1736,7 +1817,7 @@ function Home({ go, carouselTours = [], homeReviews = [] }) {
               <span>Tours guided</span>
             </div>
             <div>
-              <b>★ 5.0</b>
+              <b>5</b>
               <span>Star rating</span>
             </div>
             <div>
@@ -2112,7 +2193,7 @@ function ToursV2({ go, tours }) {
                 </div>
                 <div className="tour-body">
                   <div className="tour-meta">
-                    <span>{tour.category}</span>
+                    <span>{["festival", "unique"].includes(String(tour.category).toLowerCase()) ? "Festive" : tour.category}</span>
                     <span>{tour.mode}</span>
                   </div>
                   <h2>{tour.title}</h2>
@@ -2233,7 +2314,7 @@ function ToursV3({
     "Private",
   ];
   const categoryTitle = isFestiveCollection
-    ? "Festival Experiences"
+    ? "Festive Experiences"
     : category
       ? `${category} Tours`
       : "Curated Experiences";
@@ -2256,8 +2337,9 @@ function ToursV3({
       subtitle: "Discover the stories of Delhi",
       heading: "Why choose our Delhi City Tours?",
       description: [
-        "Delhi is a city of layered history, living traditions and unforgettable contrasts. Explore old lanes, grand monuments, food markets and local neighbourhoods with a guide who brings each place into focus.",
-        "Our small-group and private experiences connect the capital's famous sights with the people, flavours and stories that make Delhi feel personal rather than hurried.",
+        "Delhi is where India's past and present come together in the most extraordinary way. Grand Mughal monuments stand beside bustling bazaars, centuries-old temples share streets with modern cafés, and every neighbourhood has its own unique character. From the chaotic charm of Old Delhi to the wide boulevards of New Delhi, every corner offers a story waiting to be discovered.",
+        "At Nomad Wanderers, we believe the best way to experience Delhi is through the eyes of the people who know it best. Our carefully crafted experiences take you beyond the guidebooks, introducing you to hidden alleys, authentic local flavours, remarkable architecture, and the traditions that have shaped the city for centuries.",
+        "Whether you join a shared tour or enjoy a private experience, you'll leave with a genuine understanding of Delhi—not just as a destination, but as one of the world's most captivating capitals.",
       ],
     },
   };
@@ -2275,19 +2357,19 @@ function ToursV3({
     ? {
       image: diwaliFestivalHero,
       imageAlt: "Diwali diyas, rangoli and fireworks over an Indian city",
-      title: "Festival Experiences",
+      title: "Festive Experiences",
       subtitle: "Celebrate India's living traditions",
-      heading: "Why choose our Festival Tours?",
+      heading: "Why choose our Festive Tours?",
       description: [
-        "India's festivals are a celebration of its incredible diversity, where every region, community, and tradition brings its own unique colours, flavours, and customs. Our festival experiences are designed to immerse you in these vibrant celebrations, offering meaningful cultural insights and authentic local interactions that go far beyond simply watching the festivities.",
-        "From the dazzling lights of Diwali and the joyful colours of Holi to the devotion of Ganesh Chaturthi, Eid celebrations, Christmas, Navratri, and many other festivals, our knowledgeable local guides help you experience each occasion with respect, understanding, and genuine local perspective. Join us to discover the traditions, stories, and spirit that make India's festivals unforgettable.",
+        "India's festive celebrations showcase its incredible diversity, where every region, community, and tradition brings its own unique colours, flavours, and customs. Our festive experiences are designed to immerse you in these vibrant celebrations, offering meaningful cultural insights and authentic local interactions that go far beyond simply watching the festivities.",
+        "From the dazzling lights of Diwali and the joyful colours of Holi to the devotion of Ganesh Chaturthi, Eid celebrations, Christmas, Navratri, and many other celebrations, our knowledgeable local guides help you experience each occasion with respect, understanding, and genuine local perspective. Join us to discover the traditions, stories, and spirit that make India's celebrations unforgettable.",
       ],
     }
     : null;
   const collectionIntro = cityIntro || festivalIntro;
   const categoryLead =
     isFestiveCollection
-      ? "Celebrate India through locally led festival experiences, cultural traditions and memorable seasonal moments."
+      ? "Celebrate India through locally led festive experiences, cultural traditions and memorable seasonal moments."
       : category
         ? `Explore our ${category.toLowerCase()} experiences, led by local experts and designed around memorable stories.`
         : "Browse local experiences by the stories you want to take home—from heritage streets and food trails to culture-led walks.";
@@ -2389,7 +2471,7 @@ function ToursV3({
       <section className={`section tours-page ${collectionIntro ? "collection-intro-selected" : ""}`}>
         <Eyebrow>
           {category
-            ? isFestiveCollection ? "Festival experiences" : "Seasonal experiences"
+            ? isFestiveCollection ? "Festive experiences" : "Seasonal experiences"
             : city
               ? `Explore ${city}`
               : "Find your kind of day"}
@@ -2418,7 +2500,7 @@ function ToursV3({
             >
               {filters.map((item) => (
                 <option key={item} value={item}>
-                  {item}
+                  {item === "Festival" ? "Festive" : item}
                 </option>
               ))}
             </select>
@@ -2440,7 +2522,7 @@ function ToursV3({
                   </div>
                   <div className="tour-body">
                     <div className="tour-meta">
-                      <span>{isFestiveCollection && String(tour.category).trim().toLowerCase() === "unique" ? "Festival" : tour.category}</span>
+                      <span>{["festival", "unique"].includes(String(tour.category).trim().toLowerCase()) ? "Festive" : tour.category}</span>
                       <span>{getTourTravelStyleLabel(tour)}</span>
                     </div>
                     <h2>{tour.title}</h2>
@@ -4285,7 +4367,7 @@ function TourDetail({
     <main className="top-space">
       <Hero image={tour.image} className="detail-hero">
         <div className="hero-content">
-          {(tour.city || tour.category) && <Eyebrow>{[tour.city, tour.category].filter(Boolean).join(" · ")}</Eyebrow>}
+          {(tour.city || tour.category) && <Eyebrow>{[tour.city, ["festival", "unique"].includes(String(tour.category).toLowerCase()) ? "Festive" : tour.category].filter(Boolean).join(" · ")}</Eyebrow>}
           <div className="hero-facts">
             {(selectedDurationOption?.duration || tour.duration) && <span>{selectedDurationOption?.duration || tour.duration}</span>}
             {tour.time_slots?.length > 0 && <span>{tour.time_slots.map(formatTourTime).join(" · ")}</span>}
@@ -5087,7 +5169,7 @@ function BookingRequestModal({
     }
   }, [availableTimeSlots, selectedTimeSlot]);
   const startTimeSlot = selectedTimeSlot
-    ? `${tour.schedule_type === "Daily" ? "Daily" : tour.trip_type === "Festival special" ? "Festival" : "Tour"} · ${formatTourTime(selectedTimeSlot)}`
+    ? `${tour.schedule_type === "Daily" ? "Daily" : tour.trip_type === "Festival special" ? "Festive" : "Tour"} · ${formatTourTime(selectedTimeSlot)}`
     : "";
   useEffect(() => {
     if (!session?.token) return undefined;
@@ -6572,6 +6654,7 @@ function AdminDashboardV2({
   const [journeys, setJourneys] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [blogs, setBlogs] = useState([]);
   const [homeEnabledReviewCount, setHomeEnabledReviewCount] = useState(0);
   const [report, setReport] = useState(null);
   const [adminProfile, setAdminProfile] = useState(null);
@@ -6584,6 +6667,7 @@ function AdminDashboardV2({
     journeys: 0,
     bookings: 0,
     reviews: 0,
+    blogs: 0,
     carousel: 0,
     reports: 0,
   });
@@ -6615,6 +6699,7 @@ function AdminDashboardV2({
       paths.push("/api/admin/me");
       paths.push("/api/admin/carousel");
       paths.push(`/api/admin/reviews?${parameters}`);
+      paths.push("/api/admin/blogs");
       const responses = await Promise.all(
         paths.map((path) => fetch(`${apiBaseUrl}${path}`, { headers })),
       );
@@ -6642,12 +6727,14 @@ function AdminDashboardV2({
       setSelectedCarouselIds(bodies[6].tour_ids || []);
       setReviews(bodies[7].items || []);
       setHomeEnabledReviewCount(bodies[7].home_enabled_count || 0);
+      setBlogs(bodies[8] || []);
       setTotals({
         tours: bodies[0].total,
         enquiries: bodies[1].total,
         journeys: bodies[2].total,
         bookings: bodies[3].length,
         reviews: bodies[7].total,
+        blogs: (bodies[8] || []).length,
         reports: 1,
         carousel: (bodies[6].tour_ids || []).length,
       });
@@ -6669,6 +6756,7 @@ function AdminDashboardV2({
     journeys,
     bookings,
     reviews,
+    blogs,
     carousel: carouselTours,
     reports: report ? [report] : [],
   };
@@ -6859,6 +6947,7 @@ function AdminDashboardV2({
     ["enquiries", "Enquiries", totals.enquiries],
     ["journeys", "Custom journeys", totals.journeys],
     ["reviews", "Reviews", totals.reviews],
+    ["blogs", "Blogs", totals.blogs],
     ["reports", "Reports", null],
   ];
   const emptyLabel =
@@ -6874,6 +6963,8 @@ function AdminDashboardV2({
             ? "home carousel tours"
             : activeTab === "reviews"
               ? "reviews"
+              : activeTab === "blogs"
+                ? "blogs"
               : "report data";
   return (
     <main className="top-space">
@@ -6908,6 +6999,14 @@ function AdminDashboardV2({
                 Add a tour →
               </button>
             )}
+            {activeTab === "blogs" && (
+              <button
+                className="primary-button"
+                onClick={() => document.querySelector(".admin-blog-form")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              >
+                Create a blog →
+              </button>
+            )}
           </div>
         </div>
         <div className="admin-tabs">
@@ -6927,7 +7026,7 @@ function AdminDashboardV2({
           <p className="lead">Loading dashboard...</p>
         ) : (
           <>
-            {activeTab !== "reports" && activeTab !== "carousel" && (
+            {activeTab !== "reports" && activeTab !== "carousel" && activeTab !== "blogs" && (
               <AdminCollectionToolbar
                 value={search}
                 onChange={setSearch}
@@ -6936,7 +7035,9 @@ function AdminDashboardV2({
               />
             )}
             <div className="admin-collection-content">
-              {activeTab === "carousel" ? (
+              {activeTab === "blogs" ? (
+                <AdminBlogPanel blogs={blogs} headers={headers} onChanged={setBlogs} />
+              ) : activeTab === "carousel" ? (
                 <AdminCarouselPanel
                   tours={carouselTours}
                   selectedIds={selectedCarouselIds}
@@ -7030,7 +7131,7 @@ function AdminDashboardV2({
                 </div>
               )}
             </div>
-            {activeTab !== "reports" && activeTab !== "carousel" && (
+            {activeTab !== "reports" && activeTab !== "carousel" && activeTab !== "blogs" && (
               <AdminPagination
                 page={currentPage}
                 totalPages={totalPages}
@@ -7043,6 +7144,103 @@ function AdminDashboardV2({
         )}
       </section>
     </main>
+  );
+}
+
+function AdminBlogPanel({ blogs = [], headers, onChanged }) {
+  const emptyForm = { title: "", description: "", image_url: "", published: true };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const reset = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+    setImageFile(null);
+    setStatus("");
+  };
+  const startEdit = (blog) => {
+    setForm({ title: blog.title || "", description: blog.description || "", image_url: blog.image_url || "", published: Boolean(blog.published) });
+    setEditingId(blog.id);
+    setImageFile(null);
+    setStatus("");
+  };
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setStatus("");
+    try {
+      let imageUrl = form.image_url.trim();
+      if (imageFile) {
+        const data = new FormData();
+        data.append("image", imageFile);
+        const upload = await fetch(`${apiBaseUrl}/api/admin/tour-images`, { method: "POST", headers, body: data });
+        const uploadBody = await upload.json().catch(() => ({}));
+        if (!upload.ok) throw new Error(formatApiError(uploadBody.detail, "Unable to upload the blog image."));
+        imageUrl = uploadBody.image_url;
+      }
+      if (!imageUrl) throw new Error("Please upload a blog image.");
+      const response = await fetch(`${apiBaseUrl}/api/admin/blogs${editingId ? `/${editingId}` : ""}`, {
+        method: editingId ? "PUT" : "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, image_url: imageUrl }),
+      });
+      const blog = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(formatApiError(blog.detail, "Unable to save the blog post."));
+      onChanged((current) => editingId ? current.map((item) => item.id === blog.id ? blog : item) : [blog, ...current]);
+      reset();
+      setStatus(editingId ? "Blog post updated." : "Blog post published.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (blog) => {
+    if (!window.confirm(`Delete “${blog.title}”? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/blogs/${blog.id}`, { method: "DELETE", headers });
+      if (!response.ok) throw new Error("Unable to delete the blog post.");
+      onChanged((current) => current.filter((item) => item.id !== blog.id));
+      if (editingId === blog.id) reset();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
+
+  return (
+    <section className="admin-blog-panel">
+      <div className="admin-carousel-heading">
+        <div>
+          <Eyebrow>Nomad journal</Eyebrow>
+          <h2>{editingId ? "Edit blog post" : "Create a blog post"}</h2>
+          <p>Add a title, description, and photo. Published posts appear immediately on the public Blog page.</p>
+        </div>
+      </div>
+      <form className="admin-blog-form" onSubmit={save}>
+        <label>Blog title<input required minLength="3" maxLength="200" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Discover Mumbai beyond the guidebooks" /></label>
+        <label>Description<textarea required minLength="10" maxLength="10000" rows="6" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Write the story for travellers..." /></label>
+        <label>Photo<input type="file" accept="image/*" onChange={(event) => setImageFile(event.target.files?.[0] || null)} /></label>
+        {(imageFile || form.image_url) && <img className="admin-blog-preview" src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="Blog preview" />}
+        <label className="admin-blog-published"><input type="checkbox" checked={form.published} onChange={(event) => setForm((current) => ({ ...current, published: event.target.checked }))} /> Publish on the public Blog page</label>
+        <div className="admin-card-actions">
+          <button className="primary-button" disabled={saving}>{saving ? "Saving..." : editingId ? "Update blog" : "Create blog"}</button>
+          {editingId && <button type="button" onClick={reset}>Cancel</button>}
+        </div>
+      </form>
+      {status && <p className={status.includes("Unable") || status.includes("Please") ? "form-error" : "admin-status"}>{status}</p>}
+      <div className="admin-blog-list">
+        {blogs.length ? blogs.map((blog) => (
+          <article className="admin-blog-item" key={blog.id}>
+            <img src={blog.image_url} alt="" />
+            <div><span>{blog.published ? "Published" : "Draft"}</span><h3>{blog.title}</h3><p>{blog.description}</p></div>
+            <div className="admin-card-actions"><button onClick={() => startEdit(blog)}>Edit</button><button className="delete-button" onClick={() => remove(blog)}>Delete</button></div>
+          </article>
+        )) : <p className="lead">No blog posts yet. Create the first one above.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -7185,7 +7383,7 @@ function AdminCarouselPanel({
                     </td>
                     <td>
                       {tour.city}
-                      <small>{tour.category}</small>
+                      <small>{["festival", "unique"].includes(String(tour.category).toLowerCase()) ? "Festive" : tour.category}</small>
                     </td>
                     <td>
                       {tour.trip_type}
@@ -8071,7 +8269,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               <option>Half-day trip</option>
               <option>One-day trip</option>
               <option>Weekly trip</option>
-              <option>Festival special</option>
+              <option value="Festival special">Festive special</option>
             </select>
           </label>
           <label>
@@ -8114,8 +8312,8 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               <option value="" disabled>Select a category</option>
               <option value="Community">Community</option>
               <option value="Sightseeing">Sightseeing</option>
-              <option value="Festival">Festival Experiences</option>
-              <option value="Unique">Festival Experiences (legacy)</option>
+              <option value="Festival">Festive Experiences</option>
+              <option value="Unique">Festive Experiences (legacy)</option>
               <option value="Heritage">Heritage</option>
               <option value="Food">Food</option>
               <option value="Culture">Culture</option>
@@ -9114,8 +9312,8 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
             <div className="multi-day-form-grid">
               <label>Tour title<input required value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="e.g. India Culinary & Culture Journey" /></label>
               <label>Tour style<select value={form.mode} onChange={(event) => update("mode", event.target.value)}><option>Private</option><option>Shared</option></select></label>
-              <label>Primary category<select value={form.category} onChange={(event) => update("category", event.target.value)}>{multiDayCategoryOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-              <label>All categories <small>Choose every relevant category</small><select multiple value={form.categories} onChange={(event) => update("categories", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayCategoryOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label>Primary category<select value={form.category} onChange={(event) => update("category", event.target.value)}>{multiDayCategoryOptions.map((item) => <option key={item}>{item === "Festival" ? "Festive" : item}</option>)}</select></label>
+              <label>All categories <small>Choose every relevant category</small><select multiple value={form.categories} onChange={(event) => update("categories", Array.from(event.target.selectedOptions, (option) => option.value))}>{multiDayCategoryOptions.map((item) => <option key={item}>{item === "Festival" ? "Festive" : item}</option>)}</select></label>
               <label>Starting city<input required list="multi-day-cities" value={form.start_city} onChange={(event) => update("start_city", event.target.value)} placeholder="Delhi" /></label>
               <label>Ending city<input required list="multi-day-cities" value={form.end_city} onChange={(event) => update("end_city", event.target.value)} placeholder="Goa" /></label>
               <label>Duration in days<input required type="number" min="2" max="365" value={form.duration_days} onChange={(event) => update("duration_days", event.target.value)} /></label>
@@ -9616,7 +9814,7 @@ function Footer({ go }) {
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
         <button onClick={() => go("/trips?category=South%20India")}>South India</button>
         <button onClick={() => go("/trips?category=North%20India")}>North India</button>
-        <button onClick={() => go("/tours/unique")}>Festival Experiences</button>
+        <button onClick={() => go("/tours/unique")}>Festive Experiences</button>
       </div>
       <div className="footer-contact">
         <b>Contact & updates</b>
