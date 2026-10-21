@@ -34,8 +34,9 @@ Docker Compose runs the React frontend, FastAPI backend, MySQL, and Redis.
 1. Copy `docker.env.example` to `docker.env` and replace both database
    passwords.
 2. Copy `backend/.env.example` to `backend/.env` if it does not exist. Set a
-   strong `JWT_SECRET`, admin credentials, and any Razorpay, PayPal, AWS SES,
-   or Meta WhatsApp credentials you use.
+   strong `JWT_SECRET`, admin credentials, and any Razorpay, PayPal, SMTP,
+   or Meta WhatsApp credentials you use. Booking confirmation emails use the
+   SMTP settings directly and do not use Redis.
 3. Build and start everything:
 
 ```powershell

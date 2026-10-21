@@ -35,12 +35,14 @@ $env:CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://localhos
 $env:ASSET_BASE_URL = "http://localhost:8000"
 ```
 
-Copy `.env.example` to `.env` and fill in the provider values for Razorpay,
-PayPal, AWS SES, and Meta WhatsApp Cloud API. The application reads all
-provider credentials from `.env` or the process environment through
-`config.py`. Never commit `.env`; it is ignored by Git. Production deployments
-should set the same names in the hosting platform's secret manager. For PayPal
-sandbox, use `PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com`.
+Create `.env` and fill in the provider values for Razorpay, PayPal, SMTP, and
+Meta WhatsApp Cloud API. Booking emails use `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and `SMTP_FROM_NAME`.
+The application reads provider credentials from `.env` or the process
+environment through `config.py`. Never commit `.env`; it is ignored by Git.
+Production deployments should set the same names in the hosting platform's
+secret manager. For PayPal sandbox, use
+`PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com`.
 
 ## INR and USD checkout
 
@@ -79,9 +81,12 @@ Idempotency-Key: booking-123-payment-attempt-1
 Keys and their resource IDs are persisted in MySQL, so behavior survives API
 restarts. Seat availability is checked inside a
 transaction while the tour row is locked, preventing concurrent last-seat
-bookings from overselling. Payment creation and booking confirmation are also
-one transaction. Notification requests are only queued; an email or WhatsApp
-provider failure never rolls back a successful booking/payment.
+bookings from overselling. When configured, Shared and Private capacities are
+also isolated per selected duration. After payment is committed, the booking
+email is handed directly to SMTP in the same API request—there is no Redis or
+background queue in that path. `notification_logs` records the in-request
+provider hand-off state/result, and a notification-provider failure never
+rolls back a successful booking/payment.
 
 Use a private, randomly generated `JWT_SECRET` in production. The backend reads `db.env` only for database credentials; set other values in the environment or configure your deployment platform.
 

@@ -3449,6 +3449,100 @@ h3 {
   accent-color: var(--teal);
 }
 .admin-form .admin-tour-toggle span { line-height: 1.25; }
+.admin-mode-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 2px;
+}
+.admin-form .admin-mode-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  min-height: 30px;
+  margin: 0;
+  padding: 2px 5px 2px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #4d6563;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.admin-form .admin-mode-toggles label:has(input:checked) {
+  color: var(--teal);
+}
+.admin-form .admin-mode-toggles input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: 0;
+  border: 1px solid #c4d2d0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(22, 55, 54, .12);
+  cursor: pointer;
+}
+.admin-form .admin-mode-toggles input[type="checkbox"]:checked {
+  border-color: var(--teal);
+  background: #e6f7f3;
+}
+.admin-form .admin-mode-toggles input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 5px;
+  width: 7px;
+  height: 12px;
+  border: solid var(--teal);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.admin-availability-options {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #c8ddda;
+  border-radius: 10px;
+}
+.admin-availability-options legend { padding: 0 6px; font-size: 14px; font-weight: 800; }
+.admin-availability-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.admin-availability-row select,
+.admin-availability-row input[type="date"] { flex: 1 1 180px; min-height: 36px; }
+.admin-form .admin-availability-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  min-height: 28px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid #c8ddda;
+  border-radius: 999px;
+  background: #f8fcfb;
+  color: #4d6563;
+  font-size: 12px;
+  font-weight: 700;
+}
+.admin-form .admin-availability-row label input[type="checkbox"] {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--teal);
+}
 @media (max-width: 700px) {
   .admin-tour-toggles { grid-template-columns: 1fr; }
 }
@@ -3584,7 +3678,19 @@ h3 {
 .admin-duration-option-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .admin-duration-option-heading > b { color: var(--teal); font-size: 15px; }
 .admin-duration-option-heading .repeat-remove { width: auto; min-height: 30px; padding: 5px 8px; }
-.admin-duration-input { max-width: 360px; margin-top: 0; }
+.admin-duration-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, .55fr);
+  gap: 10px;
+  max-width: 460px;
+}
+.admin-duration-inputs label { margin-top: 0; }
+.admin-field-note {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .admin-pricing-type-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3642,6 +3748,7 @@ h3 {
   .admin-highlight-actions { grid-column: 3; grid-row: 1 / span 2; }
   .admin-pricing-mode-grid { grid-template-columns: 1fr; }
   .admin-pricing-type-options { grid-template-columns: 1fr; }
+  .admin-duration-inputs { grid-template-columns: 1fr; max-width: none; }
   .admin-duration-option-heading { align-items: flex-start; }
   .admin-pricing-tier-row { grid-template-columns: 1fr auto; }
   .admin-pricing-tier-row label:first-child { grid-column: 1; }
@@ -5820,6 +5927,40 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 11px;
 }
+
+.admin-users-table {
+  min-width: 1100px;
+}
+
+.admin-users-table td {
+  vertical-align: middle;
+}
+
+.admin-user-status,
+.admin-password-protected {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-user-status.is-active {
+  color: #176b4d;
+  background: #e3f5ec;
+}
+
+.admin-user-status.is-inactive {
+  color: #8b4c26;
+  background: #f8eadf;
+}
+
+.admin-password-protected {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
 .admin-reviews-table { min-width: 1700px; }
 .admin-review-point-cell { min-width: 250px; max-width: 360px; white-space: normal; line-height: 1.45; }
 .admin-reviews-table input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--teal); }
@@ -7136,6 +7277,10 @@ textarea:focus-visible {
 .tour-booking-notes a { color: var(--teal); font-weight: 800; text-decoration: none; white-space: nowrap; }
 .tour-booking-notes a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tour-booking-notes .private-tour-note { padding-left: 11px; border-left: 3px solid var(--aqua); color: #426061; }
+.tour-booking-inclusions { padding-top: 2px; }
+.tour-booking-inclusions b { margin-bottom: 7px; }
+.tour-booking-inclusions ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.tour-booking-inclusions li::marker { color: var(--teal); }
 
 /* The home carousel is a hero feature, so it should use the page width rather
    than the narrower text column. Keep only a small, even outer gap. */

@@ -482,6 +482,12 @@ def initialize_database() -> None:
         _ensure_index(connection, "custom_journeys", "custom_journeys_created_at_idx", "created_at")
         _ensure_index(connection, "users", "users_email_idx", "email")
         _ensure_index(connection, "bookings", "bookings_user_created_idx", "user_id, created_at")
+        _ensure_index(
+            connection,
+            "bookings",
+            "bookings_capacity_scope_idx",
+            "tour_id, travel_date, duration_option_id, booking_mode, booking_status",
+        )
         _ensure_index(connection, "razorpay_orders", "razorpay_orders_booking_idx", "booking_id, created_at")
         _ensure_index(connection, "notification_logs", "notification_logs_booking_created_idx", "booking_id, created_at")
         _migrate_legacy_tour_reviews(connection)
@@ -779,6 +785,23 @@ def _sync_tour_reviews(connection: DatabaseConnection, tour_id: int, items: list
 
 
 def save_tour(data: dict[str, Any], tour_id: int | None = None) -> dict[str, Any] | None:
+    # These per-mode editor values live in the existing pricing JSON. Merge
+    # explicit top-level values as a compatibility safeguard for older admin
+    # clients and make them survive every update.
+    pricing_data = _tour_pricing(data.get("pricing"))
+    for key in ("capacity_options", "capacity_modes", "inclusion_options", "inclusion_modes", "availability_options", "time_slot_modes", "meeting_detail_options"):
+        if key not in data:
+            continue
+        # TourInput supplies empty-list defaults for these compatibility
+        # fields.  An older client can therefore submit the real configuration
+        # inside `pricing`, alongside an empty top-level default.  Do not let
+        # that default erase already configured Shared/Private metadata.
+        # A current client includes the same value in pricing, so intentionally
+        # clearing an option is still persisted.
+        top_level_value = data[key]
+        if top_level_value or key not in pricing_data:
+            pricing_data[key] = top_level_value
+    data = {**data, "pricing": pricing_data}
     defaults: dict[str, Any] = {
         "inclusions": [], "gallery_images": [], "faq_items": [], "review_items": [], "time_slots": [],
         "meeting_details": "", "start_meeting_point": "", "start_meeting_map_url": None,
@@ -1016,9 +1039,23 @@ def _tour_duration_options(tour: dict[str, Any], pricing: dict[str, Any]) -> lis
                 {
                     "id": option_id,
                     "duration": duration,
+                    "duration_value": value.get("duration_value"),
+                    "duration_unit": value.get("duration_unit"),
                     "available_modes": value.get("available_modes"),
                     "shared_tiers": value.get("shared_tiers"),
                     "private_tiers": value.get("private_tiers"),
+                    "shared_slots": value.get("shared_slots"),
+                    "private_slots": value.get("private_slots"),
+                    "shared_inclusions": value.get("shared_inclusions") or [],
+                    "private_inclusions": value.get("private_inclusions") or [],
+                    "shared_meeting_point": value.get("shared_meeting_point") or "",
+                    "private_meeting_point": value.get("private_meeting_point") or "",
+                    "shared_schedule_type": value.get("shared_schedule_type"),
+                    "private_schedule_type": value.get("private_schedule_type"),
+                    "shared_time_slots": value.get("shared_time_slots") or [],
+                    "private_time_slots": value.get("private_time_slots") or [],
+                    **{key: value.get(key) or "" for key in ("shared_start_meeting_point", "shared_end_meeting_point", "private_start_meeting_point", "private_end_meeting_point")},
+                    **{key: value.get(key) for key in ("shared_start_meeting_map_url", "shared_end_meeting_map_url", "private_start_meeting_map_url", "private_end_meeting_map_url", "shared_departure_date", "private_departure_date")},
                     "_legacy": False,
                 }
             )
@@ -1029,9 +1066,24 @@ def _tour_duration_options(tour: dict[str, Any], pricing: dict[str, Any]) -> lis
         {
             "id": "default",
             "duration": str(tour.get("duration") or "").strip(),
+            "duration_value": None,
+            "duration_unit": None,
             "available_modes": pricing.get("available_modes"),
             "shared_tiers": pricing.get("shared_tiers"),
             "private_tiers": pricing.get("private_tiers"),
+            "shared_slots": None,
+            "private_slots": None,
+            "shared_inclusions": [],
+            "private_inclusions": [],
+            "shared_meeting_point": "",
+            "private_meeting_point": "",
+            "shared_schedule_type": None,
+            "private_schedule_type": None,
+            "shared_time_slots": [],
+            "private_time_slots": [],
+            "shared_start_meeting_point": "", "shared_end_meeting_point": "", "shared_start_meeting_map_url": None, "shared_end_meeting_map_url": None,
+            "private_start_meeting_point": "", "private_end_meeting_point": "", "private_start_meeting_map_url": None, "private_end_meeting_map_url": None,
+            "shared_departure_date": None, "private_departure_date": None,
             "_legacy": True,
         }
     ]
@@ -1072,6 +1124,93 @@ def _tour_booking_modes(tour: dict[str, Any], pricing: dict[str, Any]) -> list[s
         or bool(pricing.get("private_tiers"))
     )
     return ["Shared", "Private"] if has_legacy_private_price else ["Shared"]
+
+
+def _positive_booking_capacity(value: Any, field_name: str) -> int:
+    """Return a positive whole-number capacity from trusted tour configuration."""
+    message = f"{field_name} must be a whole number from 1 to 500"
+    if isinstance(value, bool):
+        raise ValueError(message)
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(message)
+    if isinstance(value, str):
+        value = value.strip()
+        if not value.isdecimal():
+            raise ValueError(message)
+    try:
+        capacity = int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(message) from error
+    if not 1 <= capacity <= 500:
+        raise ValueError(message)
+    return capacity
+
+
+def _duration_option_slot_capacity(duration_option: dict[str, Any], booking_mode: str) -> int | None:
+    """Return the configured capacity for one duration/mode, if that mode has slots."""
+    slot_key = "private_slots" if booking_mode == "Private" else "shared_slots"
+    configured = duration_option.get(slot_key)
+    if configured is None or (isinstance(configured, str) and not configured.strip()):
+        return None
+    return _positive_booking_capacity(configured, f"{booking_mode} slots")
+
+
+def _booking_capacity(
+    tour: dict[str, Any],
+    duration_option: dict[str, Any],
+    booking_mode: str,
+    selected_capacity: int | None,
+) -> tuple[int, bool]:
+    """Choose capacity and whether reservations must be isolated by option and mode.
+
+    A duration option with slots owns its own inventory.  Older tours without
+    per-option slots retain their original tour/day capacity pool.  Callers may
+    supply the server-selected capacity explicitly; it is checked against the
+    configured slot count so a stale or untrusted value cannot widen inventory.
+    """
+    configured_capacity = _duration_option_slot_capacity(duration_option, booking_mode)
+    if selected_capacity is not None:
+        explicit_capacity = _positive_booking_capacity(selected_capacity, "Selected capacity")
+        if configured_capacity is not None and explicit_capacity != configured_capacity:
+            raise ValueError("Selected capacity no longer matches this tour option")
+        return explicit_capacity, True
+    if configured_capacity is not None:
+        return configured_capacity, True
+    return _positive_booking_capacity(tour.get("capacity"), "Tour capacity"), False
+
+
+def _reserved_booking_places(
+    connection: DatabaseConnection,
+    tour_id: Any,
+    travel_date: Any,
+    duration_option_id: str,
+    booking_mode: str,
+    scoped_capacity: bool,
+) -> int:
+    """Lock applicable reservations and return their occupied places.
+
+    The tour row remains locked by ``create_booking`` to serialize the
+    read/insert transaction.  This scoped row lock and supporting index make
+    the inventory boundary explicit for duration/mode capacity pools.
+    """
+    if scoped_capacity:
+        rows = _fetch_all(
+            connection,
+            """SELECT travellers FROM bookings
+            WHERE tour_id = %s AND travel_date = %s
+            AND duration_option_id = %s AND booking_mode = %s
+            AND booking_status IN ('pending', 'confirmed') FOR UPDATE""",
+            (tour_id, travel_date, duration_option_id, booking_mode),
+        )
+    else:
+        rows = _fetch_all(
+            connection,
+            """SELECT travellers FROM bookings
+            WHERE tour_id = %s AND travel_date = %s
+            AND booking_status IN ('pending', 'confirmed') FOR UPDATE""",
+            (tour_id, travel_date),
+        )
+    return sum(int(row.get("travellers") or 0) for row in rows)
 
 
 def _booking_unit_price(
@@ -1120,7 +1259,13 @@ def _booking_unit_price(
     return base_price
 
 
-def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | None = None) -> dict[str, Any]:
+def create_booking(
+    user_id: int,
+    data: dict[str, Any],
+    idempotency_key: str | None = None,
+    *,
+    selected_capacity: int | None = None,
+) -> dict[str, Any]:
     now = _utc_now()
     with database() as connection:
         existing_id = _claim_idempotency(connection, user_id, "create_booking", idempotency_key, data)
@@ -1155,13 +1300,21 @@ def create_booking(user_id: int, data: dict[str, Any], idempotency_key: str | No
             allow_legacy_price_fallback=bool(duration_option.get("_legacy")),
         )
         selected_duration = str(duration_option.get("duration") or tour.get("duration") or "")
-        reserved = _fetch_one(
-            connection,
-            """SELECT COALESCE(SUM(travellers), 0) AS total FROM bookings
-            WHERE tour_id = %s AND travel_date = %s AND booking_status IN ('pending', 'confirmed')""",
-            (data["tour_id"], data["travel_date"]),
+        capacity, scoped_capacity = _booking_capacity(
+            tour,
+            duration_option,
+            booking_mode,
+            selected_capacity,
         )
-        if int((reserved or {"total": 0})["total"]) + int(data["travellers"]) > int(tour["capacity"]):
+        reserved = _reserved_booking_places(
+            connection,
+            data["tour_id"],
+            data["travel_date"],
+            str(duration_option["id"]),
+            booking_mode,
+            scoped_capacity,
+        )
+        if reserved + int(data["travellers"]) > capacity:
             raise ValueError("This departure no longer has enough available places")
         booking_id = _insert_and_get_id(
             connection,
@@ -1350,15 +1503,33 @@ def update_tour_schedule(tour_id: int, capacity: int, departure_date: Any, guide
     return tours[0] if tours else None
 
 
-def queue_booking_confirmation(booking_id: int, recipient: str, channel: str, requested_by: int | None) -> dict[str, Any]:
+def _create_booking_confirmation_log(
+    booking_id: int,
+    recipient: str,
+    channel: str,
+    requested_by: int | None,
+    delivery_status: str,
+) -> dict[str, Any]:
+    if delivery_status not in {"queued", "sending"}:
+        raise ValueError("Unsupported initial notification delivery status")
     with database() as connection:
         notification_id = _insert_and_get_id(
             connection,
             """INSERT INTO notification_logs (booking_id, channel, recipient, delivery_status, requested_by, created_at)
-            VALUES (%s, %s, %s, 'queued', %s, %s)""",
-            (booking_id, channel, recipient, requested_by, _utc_now()),
+            VALUES (%s, %s, %s, %s, %s, %s)""",
+            (booking_id, channel, recipient, delivery_status, requested_by, _utc_now()),
         )
         return _fetch_one(connection, "SELECT * FROM notification_logs WHERE id = %s", (notification_id,)) or {}
+
+
+def queue_booking_confirmation(booking_id: int, recipient: str, channel: str, requested_by: int | None) -> dict[str, Any]:
+    """Record a notification that is awaiting an asynchronous provider hand-off."""
+    return _create_booking_confirmation_log(booking_id, recipient, channel, requested_by, "queued")
+
+
+def start_booking_confirmation_delivery(booking_id: int, recipient: str, channel: str, requested_by: int | None) -> dict[str, Any]:
+    """Record an in-request delivery attempt; this is deliberately not a queue."""
+    return _create_booking_confirmation_log(booking_id, recipient, channel, requested_by, "sending")
 
 
 def update_booking_confirmation_status(notification_id: int, delivery_status: str) -> dict[str, Any]:

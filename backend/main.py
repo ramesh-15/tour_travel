@@ -11,6 +11,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -29,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 import db_models
 import config
+import email_delivery
 import whatsapp
 import payment_currency
 
@@ -44,6 +46,29 @@ TOUR_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 TOUR_VIDEO_TYPES = {"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov"}
+
+import logging
+import sys
+from datetime import date, datetime
+from decimal import Decimal
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+
+if not LOGGER.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+        )
+    )
+    LOGGER.addHandler(handler)
+
+LOGGER.propagate = False
+
+
+LOGGER.warning("========== app STARTED ==========")
+LOGGER.info("========== get STARTED ==========")
 
 
 def load_environment_file() -> None:
@@ -148,14 +173,50 @@ class PricingTier(BaseModel):
 class DurationPricingOption(BaseModel):
     id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     duration: str = Field(min_length=2, max_length=80)
+    # `duration` remains a human-readable label for existing tours. New admin
+    # edits also persist these numeric fields so the duration is never just
+    # free-form text.
+    duration_value: int | None = Field(default=None, ge=1, le=365)
+    duration_unit: Literal["hours", "days"] | None = None
     shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
+    # Seats are deliberately per duration and tour style. Older tours without
+    # these values keep using the tour-level capacity as a compatibility
+    # fallback.
+    shared_slots: int | None = Field(default=None, ge=1, le=500)
+    private_slots: int | None = Field(default=None, ge=1, le=500)
+    shared_inclusions: list[str] = Field(default_factory=list, max_length=30)
+    private_inclusions: list[str] = Field(default_factory=list, max_length=30)
+    shared_meeting_point: str = Field(default="", max_length=300)
+    private_meeting_point: str = Field(default="", max_length=300)
+    shared_start_meeting_point: str = Field(default="", max_length=300)
+    shared_end_meeting_point: str = Field(default="", max_length=300)
+    shared_start_meeting_map_url: str | None = Field(default=None, max_length=2048)
+    shared_end_meeting_map_url: str | None = Field(default=None, max_length=2048)
+    private_start_meeting_point: str = Field(default="", max_length=300)
+    private_end_meeting_point: str = Field(default="", max_length=300)
+    private_start_meeting_map_url: str | None = Field(default=None, max_length=2048)
+    private_end_meeting_map_url: str | None = Field(default=None, max_length=2048)
+    shared_departure_date: str | None = None
+    private_departure_date: str | None = None
+    shared_schedule_type: Literal["Daily", "Specific date"] | None = None
+    private_schedule_type: Literal["Daily", "Specific date"] | None = None
+    shared_time_slots: list[str] = Field(default_factory=list, max_length=50)
+    private_time_slots: list[str] = Field(default_factory=list, max_length=50)
     available_modes: list[BookingMode] = Field(min_length=1, max_length=2)
 
     @model_validator(mode="after")
     def validate_pricing(self) -> "DurationPricingOption":
         if len(set(self.available_modes)) != len(self.available_modes):
             raise ValueError("Each duration can include Shared and Private only once")
+        if (self.duration_value is None) != (self.duration_unit is None):
+            raise ValueError("A numeric duration needs both a value and a unit")
+        if self.duration_value is not None:
+            assert self.duration_unit is not None
+            expected_unit = self.duration_unit[:-1] if self.duration_value == 1 else self.duration_unit
+            expected_duration = f"{self.duration_value} {expected_unit}"
+            if self.duration.strip().casefold() != expected_duration:
+                raise ValueError("Duration label must match its numeric value and unit")
         for mode, tiers in (("Shared", self.shared_tiers), ("Private", self.private_tiers)):
             if mode not in self.available_modes:
                 continue
@@ -163,6 +224,11 @@ class DurationPricingOption(BaseModel):
                 raise ValueError(f"{mode} pricing needs at least one group size")
             if len({tier.travellers for tier in tiers}) != len(tiers):
                 raise ValueError(f"{mode} pricing cannot repeat a group size")
+            slots = self.shared_slots if mode == "Shared" else self.private_slots
+            if self.duration_value is not None and slots is None:
+                raise ValueError(f"{mode} tours need a numeric number of available slots")
+            if slots is not None and max(tier.travellers for tier in tiers) > slots:
+                raise ValueError(f"{mode} group size cannot exceed its available slots")
         return self
 
 
@@ -178,7 +244,14 @@ class TourPricing(BaseModel):
     shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     available_modes: list[BookingMode] | None = Field(default=None, min_length=1, max_length=2)
-    duration_options: list[DurationPricingOption] = Field(default_factory=list, max_length=12)
+    duration_options: list[DurationPricingOption] = Field(default_factory=list, max_length=50)
+    time_slot_modes: list[list[BookingMode]] = Field(default_factory=list, max_length=50)
+    availability_options: list[dict[str, object]] = Field(default_factory=list, max_length=50)
+    inclusion_modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
+    inclusion_options: list[dict[str, object]] = Field(default_factory=list, max_length=30)
+    capacity_modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
+    capacity_options: list[dict[str, object]] = Field(default_factory=list, max_length=50)
+    meeting_detail_options: list[dict[str, object]] = Field(default_factory=list, max_length=30)
 
     @model_validator(mode="after")
     def validate_duration_options(self) -> "TourPricing":
@@ -203,6 +276,7 @@ class TourMeetingLocation(BaseModel):
     start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
     end_meeting_point: str = Field(default="", max_length=300)
     end_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
+    modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
 
 
 class TourInput(BaseModel):
@@ -216,17 +290,24 @@ class TourInput(BaseModel):
     duration: str = Field(min_length=2, max_length=80)
     price: float = Field(gt=0, le=10_000_000)
     capacity: int = Field(default=20, ge=1, le=500)
+    capacity_modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
+    capacity_options: list[dict[str, object]] = Field(default_factory=list, max_length=50)
     schedule_type: ScheduleType = "Specific date"
     departure_date: date | None = None
     start_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
-    time_slots: list[str] = Field(default_factory=list, max_length=20)
+    time_slots: list[str] = Field(default_factory=list, max_length=50)
+    time_slot_modes: list[list[BookingMode]] = Field(default_factory=list, max_length=50)
+    availability_options: list[dict[str, object]] = Field(default_factory=list, max_length=50)
     guide_name: str | None = Field(default=None, max_length=120)
     highlights: list[str | TourHighlight] = Field(default_factory=list, max_length=12)
     inclusions: list[str] = Field(default_factory=list, max_length=12)
+    inclusion_modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
+    inclusion_options: list[dict[str, object]] = Field(default_factory=list, max_length=30)
     gallery_images: list[str] = Field(default_factory=list, max_length=10)
     faq_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     review_items: list[TourReviewInput] = Field(default_factory=list, max_length=50)
     meeting_details: str = Field(default="", max_length=2000)
+    meeting_detail_options: list[dict[str, object]] = Field(default_factory=list, max_length=30)
     start_meeting_point: str = Field(default="", max_length=300)
     start_meeting_map_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
     end_meeting_point: str = Field(default="", max_length=300)
@@ -1056,6 +1137,53 @@ def deliver_whatsapp_booking_confirmation(
     return db_models.update_booking_confirmation_status(int(notification["id"]), "sent")
 
 
+def deliver_email_booking_confirmation(
+    booking: dict[str, object],
+    recipient: str,
+    requested_by: int | None,
+) -> dict[str, object]:
+    """Hand a booking confirmation directly to SMTP and record the result.
+
+    The database record is delivery audit history only.  It is not a queue and
+    no Redis worker is involved in sending this confirmation.
+    """
+    customer_email = str(recipient).strip()
+    booking_id = int(booking["id"])
+    LOGGER.info(
+        "Booking confirmation email requested: booking_id=%s customer_email=%s",
+        booking_id,
+        customer_email or "<missing>",
+    )
+    notification = db_models.start_booking_confirmation_delivery(
+        booking_id,
+        customer_email,
+        "email",
+        requested_by,
+    )
+    try:
+        email_delivery.send_booking_confirmation(booking, customer_email)
+    except (
+        ValueError,
+        email_delivery.EmailConfigurationError,
+        email_delivery.EmailDeliveryError,
+    ) as error:
+        LOGGER.warning(
+            "Booking confirmation email failed: booking_id=%s customer_email=%s error=%s",
+            booking_id,
+            customer_email or "<missing>",
+            type(error).__name__,
+        )
+        return db_models.update_booking_confirmation_status(int(notification["id"]), "failed")
+    result = db_models.update_booking_confirmation_status(int(notification["id"]), "sent")
+    LOGGER.info(
+        "Booking confirmation email sent: booking_id=%s customer_email=%s notification_id=%s",
+        booking_id,
+        customer_email,
+        notification["id"],
+    )
+    return result
+
+
 def deliver_booking_whatsapp_confirmations(
     booking: dict[str, object],
     profile_phone: str,
@@ -1092,6 +1220,7 @@ def verify_razorpay_payment(
     user: dict[str, object] = Depends(customer_required),
 ) -> RazorpayVerificationResult:
     """Verify Checkout's HMAC signature before marking a booking as paid."""
+    LOGGER.info("========== PAYMENT VERIFICATION ==========")
     if not config.RAZORPAY_KEY_SECRET:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1117,20 +1246,57 @@ def verify_razorpay_payment(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Razorpay order not found")
+    
+    
+    LOGGER.info("booking details: %s  ", booking)
     if newly_verified:
         customer = db_models.get_user(int(booking["user_id"]))
-        # Messaging cannot change the outcome of a verified payment. Any
-        # provider error is recorded for staff to resend later.
-        try:
-            deliver_booking_whatsapp_confirmations(
-                booking,
-                str((customer or {}).get("phone", "")),
-                None,
-            )
-        except ValueError:
-            # A legacy booking might not yet have a saved contact number.
-            # Never turn a successfully paid booking into a failed response.
-            pass
+        LOGGER.info("customer details: %s  ", customer)
+        email_sent =  send_email_to_customer(
+            booking=booking,
+            customer=customer,
+            max_attempts=3,
+            retry_delay=5,
+        )
+
+        LOGGER.info(
+            "Booking confirmation email result: booking_id=%s success=%s",
+            booking["id"],
+            email_sent,
+        )
+
+        # LOGGER.info(
+        #     "Booking confirmation email result: booking_id=%s success=%s",
+        #     booking["id"],
+        #     email_sent,
+        # )
+    # Messaging cannot change the outcome of a verified payment. Any
+    # provider error is recorded for staff to resend later.
+    
+    # LOGGER.info(
+    #     "Booking confirmation email requested: booking_id=%s customer_email=%s",
+    #     booking_id,
+    #     customer_email or "<missing>",
+    # )
+    # LOGGER.info("customer details: %s  ", customer)
+    # LOGGER.info("customer details: %s  ", customer)
+    # LOGGER.info("newly_verified details: %s  ", newly_verified)
+    # deliver_email_booking_confirmation(
+    #     booking,
+    #     str(booking.get("customer_email") or ""),
+    #     None,
+    # )
+
+    try:
+        deliver_booking_whatsapp_confirmations(
+            booking,
+            str((customer or {}).get("phone", "")),
+            None,
+        )
+    except ValueError:
+        # A legacy booking might not yet have a saved contact number.
+        # Never turn a successfully paid booking into a failed response.
+        pass
     return RazorpayVerificationResult(success=True, booking=Booking(**booking))
 
 
@@ -1168,9 +1334,20 @@ def update_staff_booking(booking_id: int, data: BookingUpdate, account: dict[str
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Support can only cancel bookings")
     if data.booking_status is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Select a booking status to update")
+    previous_booking = db_models.get_booking(booking_id)
+    if not previous_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
     booking = db_models.update_booking(booking_id, data.booking_status)
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+    if data.booking_status == "confirmed" and previous_booking.get("booking_status") != "confirmed":
+        # A manual staff confirmation should reach the traveller immediately as
+        # well; provider failure is recorded without undoing the status change.
+        deliver_email_booking_confirmation(
+            booking,
+            str(booking.get("customer_email") or ""),
+            account.get("id") if isinstance(account.get("id"), int) else None,
+        )
     return StaffBooking(**booking)
 
 
@@ -1194,19 +1371,17 @@ def resend_booking_confirmation(booking_id: int, data: ConfirmationRequest, acco
         raise HTTPException(status_code=404, detail="Booking not found")
     notifications = []
     whatsapp_sent = 0
-    email_queued = 0
+    email_sent = 0
     for channel in data.channels:
         if channel == "email":
             recipient = str(booking["customer_email"])
-            notifications.append(
-                db_models.queue_booking_confirmation(
-                    booking_id,
-                    recipient,
-                    channel,
-                    account.get("id") if isinstance(account.get("id"), int) else None,
-                )
+            email_notification = deliver_email_booking_confirmation(
+                booking,
+                recipient,
+                account.get("id") if isinstance(account.get("id"), int) else None,
             )
-            email_queued += 1
+            notifications.append(email_notification)
+            email_sent += int(email_notification.get("delivery_status") == "sent")
         else:
             customer = db_models.get_user(int(booking["user_id"]))
             try:
@@ -1228,8 +1403,10 @@ def resend_booking_confirmation(booking_id: int, data: ConfirmationRequest, acco
         summaries.append(f"{whatsapp_sent} WhatsApp confirmation sent")
     elif "whatsapp" in data.channels:
         summaries.append("WhatsApp delivery failed; check the provider configuration")
-    if email_queued:
-        summaries.append(f"{email_queued} email confirmation queued")
+    if email_sent:
+        summaries.append(f"{email_sent} email confirmation sent")
+    elif "email" in data.channels:
+        summaries.append("Email delivery failed; check the SMTP configuration")
     return {"message": "; ".join(summaries), "notifications": notifications}
 
 
@@ -1370,3 +1547,436 @@ def update_custom_journey(journey_id: int, data: CustomJourneyUpdate) -> CustomJ
 def delete_custom_journey(journey_id: int) -> None:
     if not db_models.delete_custom_journey(journey_id):
         raise HTTPException(status_code=404, detail="Custom journey not found")
+
+
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+SMTP_USERNAME="wanderersnomad@gmail.com"
+SMTP_PASSWORD="yzve wqnz uxmy ezop"
+SMTP_FROM_EMAIL="wanderersnomad@gmail.com"
+SMTP_FROM_NAME="Nomad Wanderers"
+
+
+def send_email_to_customer(
+    booking: dict,
+    customer: dict | None = None,
+    max_attempts: int = 3,
+    retry_delay: int = 5,
+) -> bool:
+    import smtplib
+    import ssl
+    import time
+    import re
+    import logging
+    from datetime import date, datetime
+    from decimal import Decimal
+    from html import escape
+    from email.message import EmailMessage
+    from email.utils import formataddr
+
+    logger = logging.getLogger(__name__)
+    customer = customer or {}
+    # Load SMTP credentials from config.py
+    # (
+    #     SMTP_HOST,
+    #     SMTP_PORT,
+    #     SMTP_USERNAME,
+    #     SMTP_PASSWORD,
+    #     SMTP_FROM_EMAIL,
+    #     SMTP_FROM_NAME,
+    # ) = _smtp_settings()
+    logger.info("Email code inside >>>>>>>")
+    # Verify SMTP configuration
+    logger.info("SMTP Host: %s", SMTP_HOST)
+    logger.info("SMTP Port: %s", SMTP_PORT)
+
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
+    if retry_delay < 0:
+        raise ValueError("retry_delay cannot be negative")
+
+    booking_id = str(booking["id"])
+
+    customer_email = str(
+        booking.get("customer_email")
+        or booking.get("contact_email")
+        or customer.get("email")
+        or ""
+    ).strip()
+    logger.info(f"Email : {customer_email}")
+
+    customer_name = str(
+        booking.get("customer_name")
+        or customer.get("name")
+        or "Guest"
+    )
+    logger.info(f"Name : {customer_name}")
+
+    tour_name = str(booking.get("tour_title") or "Your Tour")
+    logger.info(f"Tour Name : {tour_name}")
+    city = str(booking.get("city") or "Not specified")
+    logger.info(f"City : {city}")
+
+    travel_date = booking.get("travel_date")
+    logger.info(f"Travel Date : {travel_date}")
+    if isinstance(travel_date, (date, datetime)):
+        travel_date = travel_date.strftime("%d %B %Y")
+    else:
+        travel_date = str(travel_date or "To be confirmed")
+    logger.info(f"Travel Date : {travel_date}")
+    travellers = int(booking.get("travellers") or 1)
+    logger.info(f"Travellers : {travellers}")
+    duration = str(
+        booking.get("selected_duration")
+        or booking.get("duration")
+        or "Not specified"
+    )
+    logger.info(f"Duration : {duration}")
+    booking_mode = str(booking.get("booking_mode") or "Shared")
+    logger.info(f"Booking Mode : {booking_mode}")
+    guide_name = str(booking.get("guide_name") or "To be assigned")
+    logger.info(f"Guide Name : {guide_name}")
+    booking_status = str(booking.get("booking_status") or "pending").title()
+    logger.info(f"Booking Status : {booking_status}")
+    payment_status = str(booking.get("payment_status") or "unpaid").title()
+    logger.info(f"Payment Status : {payment_status}")
+
+    unit_price = Decimal(str(booking.get("unit_price") or "0"))
+    total_amount = unit_price * travellers
+    logger.info(f"Total Amount : {total_amount}")
+    currency = str(booking.get("currency") or "INR").upper()
+    logger.info(f"Currency : {currency}")
+    currency_symbol = {
+        "INR": "₹",
+        "USD": "$",
+        "EUR": "€",
+        "GBP": "£",
+    }.get(currency, currency + " ")
+
+    formatted_amount = f"{currency_symbol}{total_amount:,.2f}"
+
+    special_requests = str(booking.get("special_requests") or "")
+    logger.info(f"Special Requests : {special_requests}")
+    start_time = "To be confirmed"
+
+    match = re.search(
+        r"Start time slot:\s*([^\r\n]+)",
+        special_requests,
+        flags=re.IGNORECASE,
+    )
+
+    if match:
+        start_time = match.group(1).strip()
+        if "·" in start_time:
+            start_time = start_time.split("·")[-1].strip()
+
+    if not customer_email or "@" not in customer_email:
+        logger.error("Missing customer email for booking %s", booking_id)
+        return False
+
+    if booking_status.lower() != "confirmed" or payment_status.lower() != "paid":
+        logger.warning(
+            "Email not sent because booking %s is not confirmed and paid",
+            booking_id,
+        )
+        return False
+
+    def safe(value):
+        return escape(str(value))
+
+    subject = f"Booking Confirmed #{booking_id} | Nomad Wanderers"
+
+    details = [
+        ("Booking ID", f"#{booking_id}"),
+        ("Tour Name", tour_name),
+        ("Destination", city),
+        ("Travel Date", travel_date),
+        ("Start Time", start_time),
+        ("Duration", duration),
+        ("Travellers", str(travellers)),
+        ("Tour Type", booking_mode),
+        ("Tour Guide", guide_name),
+    ]
+
+    details_rows = "".join(
+        f"""
+        <tr>
+            <td style="padding:12px;border-bottom:1px solid #e2e8f0;
+                       color:#64748b;width:38%;vertical-align:top;">
+                {safe(label)}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #e2e8f0;
+                       color:#123c5a;font-weight:600;">
+                {safe(value)}
+            </td>
+        </tr>
+        """
+        for label, value in details
+    )
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    </head>
+    <body style="margin:0;padding:25px 10px;background:#f4f7fb;
+                 font-family:Arial,Helvetica,sans-serif;color:#334155;">
+
+        <table role="presentation" cellpadding="0" cellspacing="0"
+               style="max-width:620px;width:100%;margin:auto;
+                      background:#ffffff;border-collapse:collapse;">
+
+            <tr>
+                <td style="background:#123c5a;color:#ffffff;
+                           text-align:center;padding:32px 20px;">
+                    <h1 style="margin:0;color:#ffffff;font-size:28px;">
+                        Nomad Wanderers
+                    </h1>
+                    <p style="color:#dbeafe;margin:10px 0 0;">
+                        Explore More, Wander More
+                    </p>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:30px 25px 15px;">
+                    <h2 style="color:#15803d;text-align:center;">
+                        &#10004; Your Booking is Confirmed!
+                    </h2>
+
+                    <p>Dear <strong>{safe(customer_name)}</strong>,</p>
+
+                    <p style="line-height:1.7;">
+                        Thank you for choosing
+                        <strong>Nomad Wanderers!</strong>
+                    </p>
+
+                    <p style="line-height:1.7;">
+                        We are delighted to confirm your booking.
+                        Your payment has been successfully received,
+                        and your adventure is all set!
+                    </p>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:10px 25px;">
+                    <h3 style="color:#123c5a;">Your Booking Details</h3>
+
+                    <table role="presentation" cellpadding="0"
+                           cellspacing="0"
+                           style="width:100%;background:#f8fafc;
+                                  border-collapse:collapse;font-size:14px;">
+                        {details_rows}
+                    </table>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:20px 25px;">
+                    <h3 style="color:#123c5a;">Payment Summary</h3>
+
+                    <table role="presentation" cellpadding="0"
+                           cellspacing="0"
+                           style="width:100%;border-collapse:collapse;">
+
+                        <tr>
+                            <td style="padding:12px;">Booking Status</td>
+                            <td style="padding:12px;color:#15803d;
+                                       font-weight:bold;">
+                                {safe(booking_status)}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding:12px;">Payment Status</td>
+                            <td style="padding:12px;color:#15803d;
+                                       font-weight:bold;">
+                                {safe(payment_status)}
+                            </td>
+                        </tr>
+
+                        <tr style="background:#eef2f7;">
+                            <td style="padding:15px;font-weight:bold;">
+                                Total Amount Paid
+                            </td>
+                            <td style="padding:15px;font-size:20px;
+                                       color:#123c5a;font-weight:bold;">
+                                {safe(formatted_amount)}
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:15px 25px 30px;">
+                    <h3 style="color:#123c5a;">
+                        Your Adventure Awaits!
+                    </h3>
+
+                    <p style="line-height:1.7;">
+                        We're excited to welcome you to
+                        {safe(city)} and make your travel
+                        experience memorable.
+                    </p>
+
+                    <p style="line-height:1.7;">
+                        Please keep this booking confirmation
+                        available on your travel day.
+                        Our team will share any necessary
+                        meeting-point or pickup instructions.
+                    </p>
+
+                    <p>Thank you for trusting Nomad Wanderers!</p>
+
+                    <p style="margin-top:25px;">
+                        Warm Regards,<br>
+                        <strong>Nomad Wanderers Team</strong>
+                    </p>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="background:#eef2f7;text-align:center;
+                           padding:20px;color:#64748b;font-size:12px;">
+                    <strong style="color:#123c5a;">
+                        Nomad Wanderers
+                    </strong>
+                    <p>Explore More, Wander More</p>
+                    <p>&copy; 2026 Nomad Wanderers. All rights reserved.</p>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
+    plain_details = "\n".join(
+        f"{label}: {value}" for label, value in details
+    )
+
+    plain_body = f"""
+NOMAD WANDERERS
+Explore More, Wander More
+
+YOUR BOOKING IS CONFIRMED!
+
+Dear {customer_name},
+
+Thank you for choosing Nomad Wanderers!
+
+Your booking has been confirmed and your payment
+has been successfully received.
+
+BOOKING DETAILS
+------------------------------
+{plain_details}
+
+PAYMENT SUMMARY
+------------------------------
+Booking Status: {booking_status}
+Payment Status: {payment_status}
+Total Amount Paid: {formatted_amount}
+
+YOUR ADVENTURE AWAITS!
+
+We're excited to welcome you to {city}.
+
+Please keep this booking confirmation available
+on your travel day. Our team will share any
+necessary meeting-point or pickup instructions.
+
+Warm Regards,
+Nomad Wanderers Team
+"""
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = formataddr(
+        (SMTP_FROM_NAME, SMTP_FROM_EMAIL)
+    )
+    message["To"] = customer_email
+
+    message.set_content(plain_body)
+    message.add_alternative(html_body, subtype="html")
+
+    context = ssl.create_default_context()
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info(
+                "Sending booking confirmation: booking_id=%s attempt=%s/%s",
+                booking_id,
+                attempt,
+                max_attempts,
+            )
+
+            with smtplib.SMTP(
+                SMTP_HOST,
+                SMTP_PORT,
+                timeout=30,
+            ) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(
+                    SMTP_USERNAME,
+                    SMTP_PASSWORD.replace(" ", ""),
+                )
+                server.send_message(message)
+
+            logger.info(
+                "Booking confirmation accepted by SMTP: booking_id=%s",
+                booking_id,
+            )
+            return True
+
+        except smtplib.SMTPAuthenticationError:
+            logger.exception("Gmail authentication failed")
+            return False
+
+        except (
+            smtplib.SMTPRecipientsRefused,
+            smtplib.SMTPSenderRefused,
+        ):
+            logger.exception("SMTP sender or recipient rejected")
+            return False
+
+        except smtplib.SMTPResponseException as error:
+            logger.warning(
+                "SMTP error for booking %s: %s",
+                booking_id,
+                error.smtp_code,
+            )
+            if not 400 <= error.smtp_code < 500:
+                return False
+
+        except (OSError, smtplib.SMTPException) as error:
+            logger.warning(
+                "SMTP connection error for booking %s: %s",
+                booking_id,
+                error,
+            )
+
+        except Exception:
+            logger.exception(
+                "Unexpected email error for booking %s",
+                booking_id,
+            )
+            return False
+
+        if attempt < max_attempts:
+            time.sleep(retry_delay * (2 ** (attempt - 1)))
+
+    logger.error(
+        "Booking confirmation failed after %s attempts: booking_id=%s",
+        max_attempts,
+        booking_id,
+    )
+    return False
+
+

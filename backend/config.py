@@ -1,7 +1,18 @@
 """Environment-only application and third-party provider configuration."""
 
 from __future__ import annotations
+import smtplib
+import ssl
+import time
+import re
+import logging
+from datetime import date, datetime
+from decimal import Decimal
+from html import escape
+from email.message import EmailMessage
+from email.utils import formataddr
 
+logger = logging.getLogger(__name__)
 import os
 from pathlib import Path
 
@@ -40,6 +51,23 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
 AWS_SES_FROM_EMAIL = os.getenv("AWS_SES_FROM_EMAIL")
 
+# Booking confirmations are handed directly to the configured SMTP provider.
+# They deliberately do not depend on Redis or an asynchronous queue.
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = os.getenv("SMTP_PORT", "587").strip()
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Nomad Wanderers").strip() or "Nomad Wanderers"
+
+
+ # Verify SMTP configuration
+logger.info("SMTP Host: %s", SMTP_HOST)
+logger.info("SMTP Port: %s", SMTP_PORT)
+logger.info("SMTP Username: %s", SMTP_USERNAME)
+logger.info("SMTP From Email: %s", SMTP_FROM_EMAIL)
+logger.info("SMTP Password Configured: %s", bool(SMTP_PASSWORD))
+
 META_WHATSAPP_ACCESS_TOKEN = os.getenv("META_WHATSAPP_ACCESS_TOKEN")
 META_WHATSAPP_PHONE_NUMBER_ID = os.getenv("META_WHATSAPP_PHONE_NUMBER_ID")
 META_WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("META_WHATSAPP_BUSINESS_ACCOUNT_ID")
@@ -69,6 +97,7 @@ def provider_readiness() -> dict[str, bool]:
         "razorpay": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET),
         "paypal": bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET and PAYPAL_WEBHOOK_ID),
         "aws_ses": bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_REGION and AWS_SES_FROM_EMAIL),
+        "smtp": bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and SMTP_FROM_EMAIL),
         # Sending through the Cloud API only requires the access token, sender
         # phone-number ID, and an approved message template. The verify token
         # and app secret are only needed when webhook verification is enabled.

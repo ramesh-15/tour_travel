@@ -3645,7 +3645,10 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
           </label>
           <label>
             Inclusions <small>(comma-separated)</small>
-            <input value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} placeholder="Local guide, water, entry fees..." />
+            <input
+              value={form.inclusions}
+              onChange={(event) => update("inclusions", event.target.value)}
+            />
           </label>
           <label>
             Gallery images <small>(upload up to 10 JPEG, PNG, or WebP files)</small>
@@ -4089,7 +4092,13 @@ function TourDetail({
   const galleryImages = [tour.image, ...(tour.gallery_images || [])].filter(
     (image, index, imagesList) => image && imagesList.indexOf(image) === index,
   );
-  const inclusions = (tour.inclusions || []).filter(Boolean);
+  const inclusionOptions = tour.pricing?.inclusion_options || [];
+  const inclusionModes = tour.pricing?.inclusion_modes || tour.inclusion_modes || ["Shared", "Private"];
+  const inclusions = inclusionOptions.length
+    ? inclusionOptions.filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode)).map((item) => item.text).filter(Boolean)
+    : inclusionModes.includes(selectedBookingMode) ? (tour.inclusions || []).filter(Boolean) : [];
+  const meetingDetailOptions = (tour.pricing?.meeting_detail_options || tour.meeting_detail_options || []).filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
+  const selectedMeetingDetails = meetingDetailOptions.length ? meetingDetailOptions.map((item) => item.text).filter(Boolean).join("\n\n") : tour.meeting_details;
   const descriptionParagraphs = splitTourDescription(tour.description);
   const reviews = (tour.review_items || [])
     .map((item, index) => ({
@@ -4121,11 +4130,11 @@ function TourDetail({
     ? bookingPrices.privateTiers.length
     : bookingPrices.sharedTiers.length;
   const groupPriceTables = [
-    availableBookingModes.includes("Shared") && {
+    selectedBookingMode === "Shared" && availableBookingModes.includes("Shared") && {
       label: "Shared tour",
       tiers: bookingPrices.sharedTiers,
     },
-    availableBookingModes.includes("Private") && {
+    selectedBookingMode === "Private" && availableBookingModes.includes("Private") && {
       label: "Private tour",
       tiers: bookingPrices.privateTiers,
     },
@@ -4135,7 +4144,7 @@ function TourDetail({
     option,
     prices: getTourBookingPrices(tour, option.id),
   }));
-  const durationPriceRows = ["Shared", "Private"].flatMap((mode) =>
+  const durationPriceRows = [selectedBookingMode].flatMap((mode) =>
     pricingByDuration.map(({ option, prices }) => {
       const tiers = mode === "Private" ? prices.privateTiers : prices.sharedTiers;
       const value = mode === "Private" ? prices.private : prices.shared;
@@ -4162,17 +4171,20 @@ function TourDetail({
   const pricedGroupSizes = groupPriceTables.flatMap((table) =>
     table.tiers.map((tier) => Number(tier.travellers)),
   );
+  const capacityOptions = tour.pricing?.capacity_options || [];
+  const selectedCapacity = capacityOptions.find((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
+  const selectedAvailabilityOptions = (tour.pricing?.availability_options || []).filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
   const groupSizeLimit =
-    Math.max(0, ...pricedGroupSizes) || Number(tour.capacity) || 6;
+    Number(selectedCapacity?.value) || Math.max(0, ...pricedGroupSizes) || Number(tour.capacity) || 6;
   const hasPrivateTourOption = availableBookingModes.includes("Private");
   const priceRows = hasMultipleDurations
     ? durationPriceRows
     : [
-        availableBookingModes.includes("Shared") && sharedPrice > 0 && {
+        selectedBookingMode === "Shared" && sharedPrice > 0 && {
           label: bookingPrices.sharedTiers.length ? "Shared tour · from" : "Shared tour",
           value: sharedPrice,
         },
-        availableBookingModes.includes("Private") && privatePrice > 0 && {
+        selectedBookingMode === "Private" && privatePrice > 0 && {
           label: bookingPrices.privateTiers.length ? "Private tour · from" : "Private tour",
           value: privatePrice,
         },
@@ -4191,6 +4203,7 @@ function TourDetail({
     ? tour.meeting_locations
     : [])
     .filter((location) => location && typeof location === "object")
+    .filter((location) => (location.modes || ["Shared", "Private"]).includes(selectedBookingMode))
     .filter((location) => (
       location.start_meeting_point ||
       location.start_meeting_map_url ||
@@ -4326,13 +4339,19 @@ function TourDetail({
           <button className="primary-button booking-card-cta" onClick={openBooking}>
             Book this tour →
           </button>
-          {inclusions.length > 0 && <ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul>}
+          {selectedAvailabilityOptions.length > 0 && <div className="tour-booking-notes"><p><b>Availability:</b> {selectedAvailabilityOptions.map((item) => item.schedule_type === "Specific date" && item.departure_date ? `${item.schedule_type} · ${item.departure_date}` : item.schedule_type).join(" · ")}</p></div>}
           <div className="tour-booking-notes">
             <p>
               <b>Group size: up to {groupSizeLimit}</b>
               <span>If your group is larger, please contact Nomad Wanderers at </span>
               <a href="tel:+919619952139">+91 96199 52139</a>.
             </p>
+            {inclusions.length > 0 && (
+              <div className="tour-booking-inclusions">
+                <b>Included in this {selectedBookingMode.toLowerCase()} tour</b>
+                <ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul>
+              </div>
+            )}
             {hasPrivateTourOption && (
               <p className="private-tour-note">
                 If you wish to start at a different time, get picked up at a different location, or entirely customise the tour, please contact us at <a href="tel:+919619952139">+91 96199 52139</a>.
@@ -4401,10 +4420,10 @@ function TourDetail({
         <section className="section tour-reference-section tour-meeting" id="meeting-details">
           <Eyebrow>Meeting details</Eyebrow>
           <h2>Where to meet</h2>
-          {tour.meeting_details && (
+          {selectedMeetingDetails && (
             <div className="tour-meeting-details">
               <span className="material-symbols-outlined" aria-hidden="true">info</span>
-              <p>{tour.meeting_details}</p>
+              <p>{selectedMeetingDetails}</p>
             </div>
           )}
           {routeMapEmbedUrl && (
@@ -4912,9 +4931,16 @@ function getTourEditorDurationOptions(tour) {
   return getTourDurationOptions(tour).map((option) => {
     const sharedTiers = normalizeTourPricingTiers(option.pricing?.shared_tiers);
     const privateTiers = normalizeTourPricingTiers(option.pricing?.private_tiers);
+    const numericMatch = String(option.duration || "").match(/^(\d+)\s*(hour|hours|day|days)$/i);
+    const durationValue = option.pricing?.duration_value || (numericMatch ? Number(numericMatch[1]) : "");
+    const durationUnit = option.pricing?.duration_unit || (numericMatch && numericMatch[2].toLowerCase().startsWith("day") ? "days" : "hours");
     return {
       id: option.legacy ? createDurationOptionId() : option.id,
       duration: option.duration || "",
+      duration_value: durationValue,
+      duration_unit: durationUnit,
+      shared_slots: Number(option.pricing?.shared_slots) || Number(tour?.capacity) || 20,
+      private_slots: Number(option.pricing?.private_slots) || Number(tour?.capacity) || 20,
       pricing_modes: option.availableModes.length
         ? option.availableModes
         : ["Shared"],
@@ -4992,14 +5018,16 @@ function BookingRequestModal({
   const generalTimeSlots = useMemo(
     () =>
       [...new Set(
-        (tour?.time_slots?.length
+        (tour?.pricing?.time_slot_modes?.length
+          ? tour.time_slots.filter((_, index) => (tour.pricing.time_slot_modes[index] || ["Shared", "Private"]).includes(bookingMode))
+          : tour?.time_slots?.length
           ? tour.time_slots
           : tour?.start_time
             ? [tour.start_time]
             : []
         ).filter(Boolean),
       )],
-    [tour?.start_time, tour?.time_slots],
+    [bookingMode, tour?.start_time, tour?.time_slots, tour?.pricing?.time_slot_modes],
   );
   const pricingTiers = useMemo(
     () =>
@@ -7320,6 +7348,8 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     category: tour?.category || "",
     duration_options: getTourEditorDurationOptions(tour),
     capacity: tour?.capacity || 20,
+    capacity_modes: tour?.pricing?.capacity_modes || tour?.capacity_modes || ["Shared", "Private"],
+    capacity_options: tour?.pricing?.capacity_options?.length ? tour.pricing.capacity_options : [{ value: tour?.capacity || 20, modes: tour?.pricing?.capacity_modes || tour?.capacity_modes || ["Shared", "Private"] }],
     schedule_type: tour?.schedule_type || "Specific date",
     departure_date: tour?.departure_date || "",
     time_slots: tour?.time_slots?.length
@@ -7327,6 +7357,10 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       : tour?.start_time
         ? [tour.start_time]
         : [""],
+    time_slot_modes: (tour?.time_slots?.length ? tour.time_slots : tour?.start_time ? [tour.start_time] : [""]).map((_, index) => tour?.pricing?.time_slot_modes?.[index] || tour?.time_slot_modes?.[index] || ["Shared", "Private"]),
+    availability_options: tour?.pricing?.availability_options?.length
+      ? tour.pricing.availability_options
+      : (tour?.availability_options?.length ? tour.availability_options : [{ schedule_type: tour?.schedule_type || "Specific date", departure_date: tour?.departure_date || "", modes: ["Shared", "Private"] }]),
     guide_name: tour?.guide_name || "",
     highlights: (tour?.highlights?.length
       ? tour.highlights
@@ -7337,8 +7371,15 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         typeof highlight === "string" ? "" : highlight?.description || "",
     })),
     inclusions: (tour?.inclusions || []).join(", "),
+    inclusion_items: tour?.pricing?.inclusion_options?.length
+      ? tour.pricing.inclusion_options
+      : (tour?.inclusions?.length ? tour.inclusions.map((text) => ({ text, modes: ["Shared", "Private"] })) : [{ text: "", modes: ["Shared", "Private"] }]),
+    inclusion_modes: tour?.pricing?.inclusion_modes || tour?.inclusion_modes || ["Shared", "Private"],
     gallery_images: (tour?.gallery_images || []).join("\n"),
     meeting_details: tour?.meeting_details || "",
+    meeting_detail_options: tour?.pricing?.meeting_detail_options?.length
+      ? tour.pricing.meeting_detail_options
+      : (tour?.meeting_detail_options?.length ? tour.meeting_detail_options : [{ text: tour?.meeting_details || "", modes: ["Shared", "Private"] }]),
     start_meeting_point: tour?.start_meeting_point || "",
     start_meeting_map_url: tour?.start_meeting_map_url || "",
     end_meeting_point: tour?.end_meeting_point || "",
@@ -7357,6 +7398,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       start_meeting_map_url: location?.start_meeting_map_url || "",
       end_meeting_point: location?.end_meeting_point || "",
       end_meeting_map_url: location?.end_meeting_map_url || "",
+      modes: location?.modes || ["Shared", "Private"],
     })),
     traveller_video_url: tour?.traveller_video_url || "",
     faq_items: (tour?.faq_items?.length
@@ -7427,6 +7469,22 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       time_slots: current.time_slots.filter((_, slotIndex) => slotIndex !== index),
     }));
   };
+  const toggleTimeSlotMode = (index, mode) => setForm((current) => ({ ...current, time_slot_modes: current.time_slot_modes.map((modes, i) => i === index ? (modes.includes(mode) ? modes.filter((item) => item !== mode) : [...modes, mode]) : modes) }));
+  const addAvailabilityOption = () => setForm((current) => ({ ...current, availability_options: [...current.availability_options, { schedule_type: "Daily", departure_date: "", modes: ["Shared"] }] }));
+  const updateAvailabilityOption = (index, field, value) => setForm((current) => ({ ...current, availability_options: current.availability_options.map((item, i) => i === index ? { ...item, [field]: value } : item) }));
+  const toggleAvailabilityMode = (index, mode) => setForm((current) => ({ ...current, availability_options: current.availability_options.map((item, i) => i === index ? { ...item, modes: item.modes.includes(mode) ? item.modes.filter((entry) => entry !== mode) : [...item.modes, mode] } : item) }));
+  const updateMeetingDetailOption = (index, field, value) => setForm((current) => ({ ...current, meeting_detail_options: current.meeting_detail_options.map((item, i) => i === index ? { ...item, [field]: value } : item) }));
+  const addMeetingDetailOption = () => setForm((current) => ({ ...current, meeting_detail_options: [...current.meeting_detail_options, { text: "", modes: ["Shared"] }] }));
+  const removeMeetingDetailOption = (index) => setForm((current) => ({ ...current, meeting_detail_options: current.meeting_detail_options.filter((_, i) => i !== index) }));
+  const toggleMeetingDetailMode = (index, mode) => setForm((current) => ({ ...current, meeting_detail_options: current.meeting_detail_options.map((item, i) => i === index ? { ...item, modes: item.modes.includes(mode) ? item.modes.filter((entry) => entry !== mode) : [...item.modes, mode] } : item) }));
+  const updateInclusionItem = (index, value) => setForm((current) => ({ ...current, inclusion_items: current.inclusion_items.map((item, i) => i === index ? { ...item, text: value } : item) }));
+  const toggleInclusionMode = (index, mode) => setForm((current) => ({ ...current, inclusion_items: current.inclusion_items.map((item, i) => i === index ? { ...item, modes: item.modes.includes(mode) ? item.modes.filter((entry) => entry !== mode) : [...item.modes, mode] } : item) }));
+  const addInclusionItem = () => setForm((current) => ({ ...current, inclusion_items: [...current.inclusion_items, { text: "", modes: ["Shared", "Private"] }] }));
+  const removeInclusionItem = (index) => setForm((current) => ({ ...current, inclusion_items: current.inclusion_items.length <= 1 ? current.inclusion_items : current.inclusion_items.filter((_, i) => i !== index) }));
+  const updateCapacityOption = (index, field, value) => setForm((current) => ({ ...current, capacity_options: current.capacity_options.map((item, i) => i === index ? { ...item, [field]: value } : item) }));
+  const toggleCapacityMode = (index, mode) => setForm((current) => ({ ...current, capacity_options: current.capacity_options.map((item, i) => i === index ? { ...item, modes: item.modes.includes(mode) ? item.modes.filter((entry) => entry !== mode) : [...item.modes, mode] } : item) }));
+  const addCapacityOption = () => setForm((current) => ({ ...current, capacity_options: [...current.capacity_options, { value: "", modes: ["Shared"] }] }));
+  const removeCapacityOption = (index) => setForm((current) => ({ ...current, capacity_options: current.capacity_options.length <= 1 ? current.capacity_options : current.capacity_options.filter((_, i) => i !== index) }));
   const updateMeetingLocation = (index, field, value) => {
     setForm((current) => ({
       ...current,
@@ -7536,6 +7594,10 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             duration_options: [...current.duration_options, {
               id: createDurationOptionId(),
               duration: "",
+              duration_value: "",
+              duration_unit: "hours",
+              shared_slots: Number(current.capacity) || 20,
+              private_slots: Number(current.capacity) || 20,
               pricing_modes: ["Shared"],
               shared_pricing_tiers: [{ travellers: 1, price_per_person: "" }],
               private_pricing_tiers: [{ travellers: 1, price_per_person: "" }],
@@ -7673,7 +7735,11 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       new Set(tiers.map((tier) => tier.travellers)).size !== tiers.length;
     const durationOptions = form.duration_options.map((option) => ({
       id: String(option.id || createDurationOptionId()).trim(),
-      duration: option.duration.trim(),
+      duration: `${Number(option.duration_value)} ${Number(option.duration_value) === 1 ? option.duration_unit.slice(0, -1) : option.duration_unit}`,
+      duration_value: Number(option.duration_value),
+      duration_unit: option.duration_unit,
+      shared_slots: option.pricing_modes.includes("Shared") ? Number(option.shared_slots) : null,
+      private_slots: option.pricing_modes.includes("Private") ? Number(option.private_slots) : null,
       available_modes: ["Shared", "Private"].filter((mode) =>
         option.pricing_modes.includes(mode),
       ),
@@ -7727,6 +7793,20 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           return;
         }
       }
+    }
+    const incompleteInclusionModeIndex = form.inclusion_items.findIndex(
+      (item) => item.text.trim() && !(item.modes || []).length,
+    );
+    if (incompleteInclusionModeIndex >= 0) {
+      setStatus(`Inclusion ${incompleteInclusionModeIndex + 1}: select Shared, Private, or both.`);
+      return;
+    }
+    const incompleteCapacityModeIndex = form.capacity_options.findIndex(
+      (item) => Number(item.value) >= 1 && !(item.modes || []).length,
+    );
+    if (incompleteCapacityModeIndex >= 0) {
+      setStatus(`Group capacity ${incompleteCapacityModeIndex + 1}: select Shared, Private, or both.`);
+      return;
     }
     const highlights = form.highlights.map((highlight) => ({
       title: highlight.title.trim(),
@@ -7786,6 +7866,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     }
     const meetingLocations = form.meeting_locations
       .map((location) => ({
+        modes: location.modes || ["Shared", "Private"],
         start_meeting_point: location.start_meeting_point.trim(),
         start_meeting_map_url: location.start_meeting_map_url.trim() || null,
         end_meeting_point: location.end_meeting_point.trim(),
@@ -7832,21 +7913,28 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       duration: durationSummary,
       mode: availablePricingModes.length === 2 ? "Both" : availablePricingModes[0],
       price: defaultPublicPrice,
-      capacity: Number(form.capacity),
+      capacity: Number(form.capacity_options[0]?.value || form.capacity),
+      capacity_modes: form.capacity_modes,
+      capacity_options: form.capacity_options.map((item) => ({ value: Number(item.value), modes: item.modes })).filter((item) => Number.isInteger(item.value) && item.value >= 1),
       departure_date:
         form.schedule_type === "Daily" ? null : form.departure_date || null,
       start_time: timeSlots[0] || null,
       time_slots: timeSlots,
+      time_slot_modes: form.time_slot_modes,
+      availability_options: form.availability_options,
       guide_name: form.guide_name.trim() || null,
       highlights: highlights.filter(
         (highlight) => highlight.title && highlight.description,
       ),
-      inclusions: form.inclusions.split(",").map((item) => item.trim()).filter(Boolean),
+      inclusions: form.inclusion_items.map((item) => item.text.trim()).filter(Boolean),
+      inclusion_modes: form.inclusion_modes,
+      inclusion_options: form.inclusion_items.filter((item) => item.text.trim()).map((item) => ({ text: item.text.trim(), modes: item.modes })),
       gallery_images: form.gallery_images
         .split("\n")
         .map((item) => item.trim())
         .filter(Boolean),
       meeting_details: form.meeting_details.trim(),
+      meeting_detail_options: form.meeting_detail_options.filter((item) => item.text.trim()).map((item) => ({ text: item.text.trim(), modes: item.modes })),
       start_meeting_point: primaryMeetingLocation.start_meeting_point,
       start_meeting_map_url: primaryMeetingLocation.start_meeting_map_url,
       end_meeting_point: primaryMeetingLocation.end_meeting_point,
@@ -7865,6 +7953,13 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
         shared_tiers: primaryDurationOption.shared_tiers,
         private_tiers: primaryDurationOption.private_tiers,
         available_modes: availablePricingModes,
+        time_slot_modes: form.time_slot_modes,
+        availability_options: form.availability_options,
+        inclusion_modes: form.inclusion_modes,
+        inclusion_options: form.inclusion_items.filter((item) => item.text.trim()).map((item) => ({ text: item.text.trim(), modes: item.modes })),
+        capacity_modes: form.capacity_modes,
+        capacity_options: form.capacity_options.map((item) => ({ value: Number(item.value), modes: item.modes })).filter((item) => Number.isInteger(item.value) && item.value >= 1),
+        meeting_detail_options: form.meeting_detail_options,
         duration_options: durationOptions,
       },
       faq_items: faqItems.filter((item) => item.question && item.answer),
@@ -8060,16 +8155,8 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                       </button>
                     )}
                   </div>
-                  <label className="admin-duration-input">
-                    Duration
-                    <input
-                      required
-                      maxLength="80"
-                      value={durationOption.duration}
-                      onChange={(event) => updateDurationOption(durationIndex, "duration", event.target.value)}
-                      placeholder="e.g. 4 hours"
-                    />
-                  </label>
+                  <div className="admin-duration-inputs"><label>Duration<input required type="number" min="1" max="365" value={durationOption.duration_value} onChange={(event) => updateDurationOption(durationIndex, "duration_value", event.target.value)} placeholder="4" /></label><label>Unit<select value={durationOption.duration_unit} onChange={(event) => updateDurationOption(durationIndex, "duration_unit", event.target.value)}><option value="hours">Hours</option><option value="days">Days</option></select></label></div>
+                  <span className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={durationOption.pricing_modes.includes(mode)} onChange={() => updateDurationPricingModes(durationIndex, durationOption.pricing_modes.includes(mode) ? durationOption.pricing_modes.filter((item) => item !== mode) : [...durationOption.pricing_modes, mode])} /> {mode}</label>)}</span>
                   <div className="admin-pricing-type-options" role="group" aria-label={`Tour types for duration ${durationIndex + 1}`}>
                     <button
                       type="button"
@@ -8103,6 +8190,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                     {durationOption.pricing_modes.includes("Shared") && (
                     <section className="admin-pricing-mode">
                       <h3>Shared tour</h3>
+                      <label>Available slots<input required type="number" min="1" max="500" value={durationOption.shared_slots} onChange={(event) => updateDurationOption(durationIndex, "shared_slots", event.target.value)} /></label>
                       <div className="admin-pricing-tier-list">
                         {durationOption.shared_pricing_tiers.map((tier, tierIndex) => (
                           <div className="admin-pricing-tier-row" key={tierIndex}>
@@ -8152,6 +8240,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                     {durationOption.pricing_modes.includes("Private") && (
                     <section className="admin-pricing-mode">
                       <h3>Private tour</h3>
+                      <label>Available slots<input required type="number" min="1" max="500" value={durationOption.private_slots} onChange={(event) => updateDurationOption(durationIndex, "private_slots", event.target.value)} /></label>
                       <div className="admin-pricing-tier-list">
                         {durationOption.private_pricing_tiers.map((tier, tierIndex) => (
                           <div className="admin-pricing-tier-row" key={tierIndex}>
@@ -8207,17 +8296,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               Add another duration
             </button>
           </fieldset>
-          <label>
-            Group capacity
-            <input
-              required
-              type="number"
-              min="1"
-              max="500"
-              value={form.capacity}
-              onChange={(event) => update("capacity", event.target.value)}
-            />
-          </label>
+          <fieldset className="admin-capacity-options"><legend>Group capacity</legend>{form.capacity_options.map((item, index) => <div className="admin-capacity-row" key={index}><input required type="number" min="1" max="500" value={item.value} onChange={(event) => updateCapacityOption(index, "value", event.target.value)} placeholder="20" /><span className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={item.modes.includes(mode)} onChange={() => toggleCapacityMode(index, mode)} /> {mode}</label>)}</span>{form.capacity_options.length > 1 && <button type="button" className="repeat-remove" onClick={() => removeCapacityOption(index)}>×</button>}</div>)}<button type="button" className="repeat-add" onClick={addCapacityOption}>+ Add group capacity</button></fieldset>
           <label>
             Availability
             <select
@@ -8231,7 +8310,9 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               Use Daily for recurring departures; otherwise select the tour date
               below.
             </small>
+            <span className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={form.availability_options.some((item) => item.modes.includes(mode))} onChange={() => update("availability_options", form.availability_options.map((item) => item.modes.includes(mode) ? { ...item, modes: item.modes.filter((entry) => entry !== mode) } : { ...item, modes: [...item.modes, mode] }))} /> {mode}</label>)}</span>
           </label>
+          <fieldset className="admin-availability-options"><legend>Availability by tour type</legend>{form.availability_options.map((item, index) => <div className="admin-availability-row" key={index}><select value={item.schedule_type} onChange={(event) => updateAvailabilityOption(index, "schedule_type", event.target.value)}><option>Daily</option><option>Specific date</option></select>{item.schedule_type === "Specific date" && <input type="date" value={item.departure_date} onChange={(event) => updateAvailabilityOption(index, "departure_date", event.target.value)} />}{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={item.modes.includes(mode)} onChange={() => toggleAvailabilityMode(index, mode)} /> {mode}</label>)}</div>)}<button type="button" className="repeat-add" onClick={addAvailabilityOption}>+ Add availability</button></fieldset>
           <fieldset className="tour-time-slots-field">
             <legend>Departure time slots</legend>
             <small>Add every departure time travellers can choose from.</small>
@@ -8247,6 +8328,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                       onChange={(event) => updateTimeSlot(index, event.target.value)}
                     />
                   </label>
+                  <div className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={form.time_slot_modes[index]?.includes(mode)} onChange={() => toggleTimeSlotMode(index, mode)} /> {mode}</label>)}</div>
                   <button
                     type="button"
                     className="repeat-remove"
@@ -8353,10 +8435,12 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               Add highlight
             </button>
           </fieldset>
-          <label>
-            Inclusions <small>(comma-separated)</small>
-            <input value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} placeholder="Local guide, water, entry fees..." />
-          </label>
+          <fieldset className="admin-inclusion-options">
+            <legend>Inclusions</legend>
+            <small>Add one inclusion per row, then select Shared, Private, or both.</small>
+            {form.inclusion_items.map((item, index) => <div className="admin-repeat-input" key={index}><input value={item.text} onChange={(event) => updateInclusionItem(index, event.target.value)} placeholder="Local guide, water, entry fees..." /><span className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={item.modes.includes(mode)} onChange={() => toggleInclusionMode(index, mode)} /> {mode}</label>)}</span>{form.inclusion_items.length > 1 && <button type="button" className="repeat-remove" onClick={() => removeInclusionItem(index)}>×</button>}</div>)}
+            <button type="button" className="repeat-add" onClick={addInclusionItem}>+ Add inclusion</button>
+          </fieldset>
           <label>
             Gallery image URLs <small>(one URL per line, up to 10)</small>
             <textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." />
@@ -8381,6 +8465,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             Meeting details
             <textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Meeting point, start time and end point..." />
           </label>
+          <fieldset className="admin-meeting-detail-options"><legend>Meeting details by tour type</legend>{form.meeting_detail_options.map((item, index) => <div className="admin-meeting-detail-row" key={index}><textarea rows="2" value={item.text} onChange={(event) => updateMeetingDetailOption(index, "text", event.target.value)} placeholder="Meeting point, time, and ending point..." /><div className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={item.modes.includes(mode)} onChange={() => toggleMeetingDetailMode(index, mode)} /> {mode}</label>)}</div>{form.meeting_detail_options.length > 1 && <button type="button" className="repeat-remove" onClick={() => removeMeetingDetailOption(index)}>Remove</button>}</div>)}<button type="button" className="repeat-add" onClick={addMeetingDetailOption}>+ Add meeting detail</button></fieldset>
           <fieldset className="admin-meeting-locations">
             <legend>Start and end meeting locations</legend>
             <small>In Google Maps, search the location, tap <b>Share</b>, then copy and paste its link here. Both map links are optional.</small>
@@ -8389,6 +8474,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                 <section className="admin-meeting-location" key={index}>
                   <div className="admin-meeting-location-heading">
                     <b>{form.meeting_locations.length > 1 ? `Meeting location ${index + 1}` : "Meeting location"}</b>
+                    <div className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={location.modes.includes(mode)} onChange={() => updateMeetingLocation(index, "modes", location.modes.includes(mode) ? location.modes.filter((item) => item !== mode) : [...location.modes, mode])} /> {mode}</label>)}</div>
                     {form.meeting_locations.length > 1 && (
                       <button
                         type="button"
@@ -9538,14 +9624,14 @@ function Footer({ go, path }) {
         <button type="button" onClick={() => setActivePolicy("refund")}>Refund Policy</button>
         <button type="button" onClick={() => setActivePolicy("privacy")}>Privacy Policy</button>
       </div>
-      <div>
+      {path !== "/about" && <div>
         <b>Top destinations</b>
         <button onClick={() => go("/tours?city=Mumbai")}>Mumbai</button>
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
         <button onClick={() => go("/trips?category=South%20India")}>South India</button>
         <button onClick={() => go("/trips?category=North%20India")}>North India</button>
         <button onClick={() => go("/tours/unique")}>Festive Experiences</button>
-      </div>
+      </div>}
       <div className="footer-contact">
         <b>Contact & updates</b>
         <a href="mailto:wanderersnomad@gmail.com">wanderersnomad@gmail.com</a>
