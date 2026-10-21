@@ -1633,6 +1633,12 @@ h3 {
 }
 .tour-description { display: grid; gap: 18px; max-width: 900px; }
 .detail-content .tour-description .lead { max-width: none; margin: 0; }
+.detail-content .tour-detail-followup {
+  padding: 36px 0 0;
+}
+.detail-content .tour-detail-followup > h2 {
+  margin-bottom: 22px;
+}
 .detail-content > p:not(.lead) {
   margin-top: 20px;
 }
@@ -4322,7 +4328,7 @@ body {
   background-position: left center;
   background-size: contain;
 }
-.reference-footer .footer-reference-grid { display: grid; grid-template-columns: 2fr .9fr .9fr 1.5fr; gap: 30px; padding: 32px 0 28px; }
+.reference-footer .footer-reference-grid { display: grid; grid-template-columns: minmax(180px, .9fr) minmax(180px, .9fr) minmax(250px, 1.25fr); gap: clamp(28px, 6vw, 96px); padding: 32px 0 28px; }
 .reference-footer .footer-reference-grid > div { display: grid; align-content: start; gap: 14px; min-width: 0; }
 .reference-footer .footer-reference-grid > div:first-child { max-width: none; }
 .reference-footer .footer-reference-grid > div:first-child .brand { display: none; }
@@ -6441,9 +6447,28 @@ textarea:focus-visible {
 .home-page > .section { padding-top: 24px !important; padding-bottom: 24px !important; }
 .top-space > .section:first-child { padding-top: 0 !important; }
 
-/* Keep the page clean and centered by hiding the edge-floating action widgets. */
-.floating-whatsapp,
+/* Keep the page clean and centered by hiding the promotional countdown. */
 .offer-countdown { display: none !important; }
+
+/* Persistent quick contact action. */
+.floating-whatsapp {
+  position: fixed;
+  z-index: 50;
+  right: 24px;
+  bottom: 24px;
+  display: grid !important;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  padding: 0;
+  background: #25d366;
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(0, 80, 45, .34);
+}
+.floating-whatsapp svg { width: 29px; height: 29px; fill: currentColor; }
+.floating-whatsapp:hover { transform: translateY(-3px) scale(1.04); color: #fff; }
 
 @media (max-width: 800px) {
   .top-space > .section,
@@ -7725,6 +7750,18 @@ textarea:focus-visible {
   padding-right: 0;
   padding-left: 0;
   overflow-x: clip;
+}
+
+@media (min-width: 801px) {
+  .reference-footer .footer-reference-grid,
+  .reference-footer .footer-bottom {
+    width: min(calc(100% - 64px), 1280px);
+  }
+
+  .reference-footer .footer-reference-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(40px, 6vw, 96px);
+  }
 }
 
 @media (max-width: 600px) {

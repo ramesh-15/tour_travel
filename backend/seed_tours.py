@@ -89,11 +89,11 @@ TOURS = (
     },
     {
         "title": "Diwali Markets of Delhi",
-        "description": "Celebrate the festive season with Delhi's decorated bazaars, artisan gifts and seasonal flavours on a two-day cultural escape.",
+        "description": "Celebrate the festival season with Delhi's decorated bazaars, artisan gifts and seasonal flavours on a two-day cultural escape.",
         "image_url": f"{ASSET_BASE_URL}/static/tours/delhi-diwali-markets.png",
         "city": "Delhi", "mode": "Shared", "trip_type": "Weekly trip", "category": "Festival", "duration": "2 days",
         "price": 8200, "capacity": 10, "departure_date": date(2026, 11, 1), "guide_name": "Riya Kapoor",
-        "highlights": ["Festive bazaars", "Artisan shopping", "Diwali treats"], "tag": "Seasonal", "featured": True, "dark": False, "published": True,
+        "highlights": ["Festival bazaars", "Artisan shopping", "Diwali treats"], "tag": "Seasonal", "featured": True, "dark": False, "published": True,
     },
 )
 

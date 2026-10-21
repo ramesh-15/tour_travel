@@ -592,8 +592,9 @@ function App() {
             rel="noreferrer"
             aria-label="Chat with Nomad Wanderers on WhatsApp"
           >
-            <span className="material-symbols-outlined">chat</span>
-            <span>WhatsApp</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20.52 3.48A11.93 11.93 0 0 0 12.03 0C5.41 0 .03 5.38.03 12c0 2.12.55 4.19 1.6 6.01L0 24l6.15-1.61A11.96 11.96 0 0 0 12.03 24C18.65 24 24 18.62 24 12a11.92 11.92 0 0 0-3.48-8.52ZM12.03 21.98a9.9 9.9 0 0 1-5.05-1.38l-.36-.21-3.65.96.97-3.56-.24-.37A9.94 9.94 0 1 1 12.03 21.98Zm5.45-7.44c-.3-.15-1.78-.88-2.05-.98-.28-.1-.48-.15-.69.15-.2.3-.79.98-.97 1.18-.18.2-.36.22-.66.08-.3-.15-1.27-.47-2.42-1.5a9.13 9.13 0 0 1-1.67-2.08c-.17-.3-.02-.46.13-.6.13-.13.3-.36.45-.54.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.69-1.66-.94-2.28-.25-.6-.5-.52-.69-.53h-.59c-.2 0-.52.08-.79.38-.28.3-1.04 1.02-1.04 2.48s1.07 2.88 1.22 3.08c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.62.71.22 1.35.19 1.86.12.57-.08 1.78-.73 2.03-1.43.25-.7.25-1.3.17-1.43-.07-.12-.27-.2-.57-.35Z" />
+            </svg>
           </a>
         </>
       )}
@@ -1005,7 +1006,7 @@ function Header({
                 </div>
                 <span className="dropdown-divider" />
                 <button onClick={() => selectTour("/tours/unique")}>
-                  Festive Experiences
+                  Festival Experiences
                 </button>
               </div>
             )}
@@ -1167,7 +1168,7 @@ function Header({
               className={path === "/tours/unique" ? "active trip-option" : "trip-option"}
               onClick={() => mobileNavigate("/tours/unique")}
             >
-              Festive Experiences
+              Festival Experiences
             </button>
             <span>Multi-day Tours</span>
             <button
@@ -1293,6 +1294,29 @@ function About({ go }) {
             make every journey feel personal. From a first morning in Mumbai to
             a multi-day route across India, we care about the stories that stay
             with you after the photographs are packed away.
+          </p>
+          <p>
+            Nomad Wanderers began with a simple idea—to share the real India
+            through the eyes of those who call it home. Founded by Rajesh,
+            better known as Raj, who was born and raised in Dharavi, Mumbai,
+            the journey started with a passion for introducing travellers to
+            his community beyond stereotypes and headlines.
+          </p>
+          <p>
+            Over the past 12+ years, that passion has grown into a deep
+            understanding of India's history, culture, and diverse traditions.
+            From leading immersive experiences through Mumbai to exploring the
+            ancient wonders of Ajanta and Ellora and designing journeys across
+            North and South India, Raj's vision has remained the same—to help
+            travellers experience India beyond the guidebooks.
+          </p>
+          <p>
+            Today, Nomad Wanderers creates thoughtfully curated private
+            journeys that connect visitors with India's iconic landmarks,
+            hidden gems, local communities, and authentic everyday life. Every
+            experience is built on genuine local knowledge, meaningful
+            connections, and the stories, people, and traditions that make
+            India truly extraordinary.
           </p>
           <div className="about-stats">
             <div>
@@ -2209,7 +2233,7 @@ function ToursV3({
     "Private",
   ];
   const categoryTitle = isFestiveCollection
-    ? "Festive Experiences"
+    ? "Festival Experiences"
     : category
       ? `${category} Tours`
       : "Curated Experiences";
@@ -2221,8 +2245,8 @@ function ToursV3({
       subtitle: "Discover the real Mumbai",
       heading: "Why choose our Mumbai City Tours?",
       description: [
-        "Nomad Wanderers is rooted in Mumbai and creates locally led city tours that move beyond the usual checklist. Explore landmark views, historic lanes, markets and neighbourhood stories with hosts who know how the city moves.",
-        "Our small-group and private experiences are thoughtfully paced around your interests, leaving time for local food, honest conversation and the everyday places most visitors pass by.",
+        "Mumbai is a city of endless contrasts, and the best way to experience it is on your own terms. Whether you choose a shared experience or a private tour, every journey is thoughtfully designed to help you discover the city in a meaningful way. Whether you're curious about local neighbourhoods, fascinated by history, eager to try street food, or looking for places most visitors never discover, we'll create a day that feels personal and rewarding.",
+        "Our goal isn't simply to show you the city's landmarks—it's to help you understand the people, stories, and traditions that make Mumbai one of the world's most fascinating cities. With knowledgeable local guides, genuine interactions, and thoughtfully planned experiences, you'll leave with a deeper connection to Mumbai and memories that go far beyond sightseeing.",
       ],
     },
     Delhi: {
@@ -2251,12 +2275,12 @@ function ToursV3({
     ? {
       image: diwaliFestivalHero,
       imageAlt: "Diwali diyas, rangoli and fireworks over an Indian city",
-      title: "Festival Tours",
+      title: "Festival Experiences",
       subtitle: "Celebrate India's living traditions",
-      heading: "Why choose our Festive Tours?",
+      heading: "Why choose our Festival Tours?",
       description: [
-        "India's festivals are best experienced with the people, traditions and local stories that bring each celebration to life. Our hosts help you move beyond the spectacle with thoughtful, respectful access to seasonal rituals, food and neighbourhood gatherings.",
-        "Travel in a small group or privately, with a well-paced plan that leaves room to enjoy the lights, flavours and spontaneous moments that make every festival memorable.",
+        "India's festivals are a celebration of its incredible diversity, where every region, community, and tradition brings its own unique colours, flavours, and customs. Our festival experiences are designed to immerse you in these vibrant celebrations, offering meaningful cultural insights and authentic local interactions that go far beyond simply watching the festivities.",
+        "From the dazzling lights of Diwali and the joyful colours of Holi to the devotion of Ganesh Chaturthi, Eid celebrations, Christmas, Navratri, and many other festivals, our knowledgeable local guides help you experience each occasion with respect, understanding, and genuine local perspective. Join us to discover the traditions, stories, and spirit that make India's festivals unforgettable.",
       ],
     }
     : null;
@@ -2365,7 +2389,7 @@ function ToursV3({
       <section className={`section tours-page ${collectionIntro ? "collection-intro-selected" : ""}`}>
         <Eyebrow>
           {category
-            ? isFestiveCollection ? "Festive experiences" : "Seasonal experiences"
+            ? isFestiveCollection ? "Festival experiences" : "Seasonal experiences"
             : city
               ? `Explore ${city}`
               : "Find your kind of day"}
@@ -4031,9 +4055,19 @@ function TourDetail({
   const bookingPrices = getTourBookingPrices(tour, durationOptionId);
   const availableBookingModes = bookingPrices.availableModes;
   const availableBookingModesKey = availableBookingModes.join(",");
+  const cardBookingModes = [...new Set(durationOptions.flatMap((option) =>
+    getTourBookingPrices(tour, option.id).availableModes,
+  ))];
   const selectedBookingMode = availableBookingModes.includes(bookingMode)
     ? bookingMode
     : availableBookingModes[0] || "Shared";
+  const selectCardBookingMode = (mode) => {
+    const matchingDuration = durationOptions.find((option) =>
+      getTourBookingPrices(tour, option.id).availableModes.includes(mode),
+    );
+    if (matchingDuration) setDurationOptionId(matchingDuration.id);
+    setBookingMode(mode);
+  };
 
   useEffect(() => {
     if (!tour) return;
@@ -4123,12 +4157,15 @@ function TourDetail({
   const bookingModeLabel = getTourTravelStyleLabel(tour, durationOptionId);
   const sharedPrice = bookingPrices.shared;
   const privatePrice = bookingPrices.private;
-  const selectedBookingPrice = selectedBookingMode === "Private"
-    ? privatePrice
-    : sharedPrice;
-  const selectedBookingTierCount = selectedBookingMode === "Private"
-    ? bookingPrices.privateTiers.length
-    : bookingPrices.sharedTiers.length;
+  const selectedBookingTiers = selectedBookingMode === "Private"
+    ? bookingPrices.privateTiers
+    : bookingPrices.sharedTiers;
+  const onePersonTier = selectedBookingTiers.find(
+    (tier) => Number(tier.travellers) === 1,
+  );
+  const selectedBookingPrice = Number(onePersonTier?.price_per_person) || (
+    selectedBookingMode === "Private" ? privatePrice : sharedPrice
+  );
   const groupPriceTables = [
     selectedBookingMode === "Shared" && availableBookingModes.includes("Shared") && {
       label: "Shared tour",
@@ -4284,39 +4321,45 @@ function TourDetail({
               </video>
             </div>
           )}
+          {hasPriceAndInclusions && (
+            <section className="tour-reference-section tour-detail-followup" id="price-inclusions">
+              <Eyebrow>Price &amp; inclusions</Eyebrow>
+              <h2>Tour details</h2>
+              {hasMultipleDurations && <p className="tour-selected-duration">Compare prices for each available duration.</p>}
+              {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b><Money amount={item.value} /> <small>per person</small></b></article>)}</div>}
+              {displayedGroupPriceTables.length > 0 && (
+                <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
+                  {displayedGroupPriceTables.map((table) => (
+                    <article key={table.key || table.label}>
+                      {table.duration && <span className="tour-price-mode">{table.label} prices</span>}
+                      <h3>{table.duration || `${table.label} prices`}</h3>
+                      <div className="tour-group-price-table">
+                        <div><b>Travellers</b><b>Price per person</b></div>
+                        {table.tiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span><strong><Money amount={tier.price_per_person} /></strong></div>)}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {(inclusions.length > 0 || tour.inclusion_groups?.length > 0) && <div className="tour-detail-inclusions">{inclusions.length > 0 && <article><h3>Included</h3><ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}{(tour.inclusion_groups || []).map((group) => <article key={group.title}><h3>{group.title}</h3><ul>{(group.items || []).map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>}
+            </section>
+          )}
         </div>
         <aside className="booking-card">
           {bookingModeLabel && <span>{bookingModeLabel} tour</span>}
-          {durationOptions.length > 1 && (
-            <div className="booking-card-duration-picker">
-              <b>Choose a duration</b>
-              <div>
-                {durationOptions.map((option) => (
-                  <button
-                    className={durationOptionId === option.id ? "is-selected" : ""}
-                    type="button"
-                    key={option.id}
-                    onClick={() => setDurationOptionId(option.id)}
-                  >
-                    {option.duration}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {availableBookingModes.length > 1 && (
+          {cardBookingModes.length > 1 && (
             <div className="booking-card-mode-picker">
               <b>Choose your tour style</b>
               <div>
-                {availableBookingModes.map((mode) => (
+                {cardBookingModes.map((mode) => (
                   <button
                     aria-pressed={selectedBookingMode === mode}
                     className={selectedBookingMode === mode ? "is-selected" : ""}
                     key={mode}
                     type="button"
-                    onClick={() => setBookingMode(mode)}
+                    onClick={() => selectCardBookingMode(mode)}
                   >
-                    <b>{mode} tour</b>
+                    <b>{mode}</b>
                     <small>
                       {mode === "Shared"
                         ? "Join a small group"
@@ -4330,7 +4373,7 @@ function TourDetail({
           {selectedBookingPrice > 0 && (
             <div className="price">
               <small>
-                {selectedBookingMode} tour{selectedBookingTierCount ? " · from" : ""}
+                {selectedBookingMode} tour{onePersonTier ? " · 1 person" : ""}
               </small>
               <b className="booking-price-by-mode"><Money amount={selectedBookingPrice} /></b>
               <span>per person</span>
@@ -4343,8 +4386,6 @@ function TourDetail({
           <div className="tour-booking-notes">
             <p>
               <b>Group size: up to {groupSizeLimit}</b>
-              <span>If your group is larger, please contact Nomad Wanderers at </span>
-              <a href="tel:+919619952139">+91 96199 52139</a>.
             </p>
             {inclusions.length > 0 && (
               <div className="tour-booking-inclusions">
@@ -4362,36 +4403,6 @@ function TourDetail({
       </section>
       {bookingOpen && <BookingRequestModal tour={tour} session={session} prices={bookingPrices} initialDurationOptionId={durationOptionId} initialBookingMode={selectedBookingMode} onClose={closeBooking} />}
 
-      {hasPriceAndInclusions && (
-        <section className="section tour-reference-section" id="price-inclusions">
-          <Eyebrow>Price & inclusions</Eyebrow>
-          <h2>Tour details</h2>
-          {hasMultipleDurations && (
-            <p className="tour-selected-duration">Compare prices for each available duration.</p>
-          )}
-          {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b><Money amount={item.value} /> <small>per person</small></b></article>)}</div>}
-          {displayedGroupPriceTables.length > 0 && (
-            <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
-              {displayedGroupPriceTables.map((table) => (
-                <article key={table.key || table.label}>
-                  {table.duration && <span className="tour-price-mode">{table.label} prices</span>}
-                  <h3>{table.duration || `${table.label} prices`}</h3>
-                  <div className="tour-group-price-table">
-                    <div><b>Travellers</b><b>Price per person</b></div>
-                    {table.tiers.map((tier) => (
-                      <div key={tier.travellers}>
-                        <span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span>
-                        <strong><Money amount={tier.price_per_person} /></strong>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-          {(inclusions.length > 0 || tour.inclusion_groups?.length > 0) && <div className="tour-detail-inclusions">{inclusions.length > 0 && <article><h3>Included</h3><ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}{(tour.inclusion_groups || []).map((group) => <article key={group.title}><h3>{group.title}</h3><ul>{(group.items || []).map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>}
-        </section>
-      )}
       {highlights.length > 0 && (
         <section className="section tour-reference-section" id="tour-highlights">
           <Eyebrow>Highlights</Eyebrow>
@@ -5394,12 +5405,7 @@ function Contact() {
           </p>
           <div className="office-card">
             <b>Main Office</b>
-            <p>
-              ⌖ Colaba Causeway, Mumbai
-              <br />
-              Maharashtra 400001, India
-            </p>
-            <p>◷ Monday — Friday: 9:00 AM – 6:00 PM IST</p>
+            <p>Dharavi, Mumbai, 400017</p>
           </div>
         </div>
         <form
@@ -5568,12 +5574,7 @@ function ContactFlow() {
           </p>
           <div className="office-card">
             <b>Main Office</b>
-            <p>
-              ⌖ Colaba Causeway, Mumbai
-              <br />
-              Maharashtra 400001, India
-            </p>
-            <p>◷ Monday — Friday: 9:00 AM – 6:00 PM IST</p>
+            <p>Dharavi, Mumbai, 400017</p>
           </div>
         </div>
         <form className="contact-form journey-form" onSubmit={submit}>
@@ -6084,12 +6085,7 @@ function ContactFlowV2({ session }) {
           )}
           <div className="office-card">
             <b>Main Office</b>
-            <p>
-              ⌖ Colaba Causeway, Mumbai
-              <br />
-              Maharashtra 400001, India
-            </p>
-            <p>◷ Monday — Friday: 9:00 AM – 6:00 PM IST</p>
+            <p>Dharavi, Mumbai, 400017</p>
           </div>
         </div>
         <form className="contact-form journey-form" onSubmit={submit}>
@@ -8121,8 +8117,8 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               <option value="" disabled>Select a category</option>
               <option value="Community">Community</option>
               <option value="Sightseeing">Sightseeing</option>
-              <option value="Festival">Festive Experiences</option>
-              <option value="Unique">Festive Experiences (legacy)</option>
+              <option value="Festival">Festival Experiences</option>
+              <option value="Unique">Festival Experiences (legacy)</option>
               <option value="Heritage">Heritage</option>
               <option value="Food">Food</option>
               <option value="Culture">Culture</option>
@@ -9610,15 +9606,8 @@ function Footer({ go, path }) {
       <div className="footer-skyline" aria-hidden="true"><img src={footerCitySkyline} alt="" /></div>
       <div className="footer-reference-grid">
       <div>
-        <p>
-          Experience Mumbai's soul through expert eyes. Ethical, professional,
-          and authentic tours since 2012.
-        </p>
-      </div>
-      <div>
         <b>About us</b>
         <button onClick={() => go("/about")}>Why choose us</button>
-        {path !== "/about" && <button onClick={() => go("/tours")}>Tours</button>}
         <button onClick={() => go("/contact")}>Contact</button>
         <button type="button" onClick={() => setActivePolicy("terms")}>Terms &amp; Conditions</button>
         <button type="button" onClick={() => setActivePolicy("refund")}>Refund Policy</button>
@@ -9630,7 +9619,7 @@ function Footer({ go, path }) {
         <button onClick={() => go("/tours?city=Delhi")}>Delhi</button>
         <button onClick={() => go("/trips?category=South%20India")}>South India</button>
         <button onClick={() => go("/trips?category=North%20India")}>North India</button>
-        <button onClick={() => go("/tours/unique")}>Festive Experiences</button>
+        <button onClick={() => go("/tours/unique")}>Festival Experiences</button>
       </div>}
       <div className="footer-contact">
         <b>Contact & updates</b>
