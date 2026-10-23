@@ -1264,14 +1264,21 @@ function BlogPage() {
 
   return (
     <main className="top-space blog-page">
-      <section className="blog-page-hero">
-        <div>
-          <Eyebrow>Nomad journal</Eyebrow>
-          <h1>Stories, places & travel inspiration.</h1>
-          <p>Discover India through local insight, memorable journeys, and the people who make every place special.</p>
+      <section className="city-tour-intro blog-page-intro">
+        <div className="city-tour-hero">
+          <img src={images.delhi} alt="India Gate in New Delhi" />
+          <div className="city-tour-hero-content">
+            <h1>Blog</h1>
+            <p>Stories, places & travel inspiration</p>
+          </div>
         </div>
       </section>
       <section className="section blog-page-content">
+        <div className="blog-page-heading">
+          <Eyebrow>Nomad journal</Eyebrow>
+          <h2>Discover India through local stories.</h2>
+          <p>Travel ideas, local perspectives, and the people who make every place special.</p>
+        </div>
         {loading ? (
           <p className="lead">Loading stories...</p>
         ) : error ? (
@@ -1381,20 +1388,6 @@ function About() {
             connections, and the stories, people, and traditions that make
             India truly extraordinary.
           </p>
-          <div className="about-stats">
-            <div>
-              <b>12</b>
-              <span>years guiding</span>
-            </div>
-            <div>
-              <b>500+</b>
-              <span>journeys shared</span>
-            </div>
-            <div>
-              <b className="about-rating" aria-label="Five star traveller rating">★★★★★</b>
-              <span>traveller rating</span>
-            </div>
-          </div>
         </div>
       </section>
       <section className="section about-principles">
@@ -6649,6 +6642,7 @@ function AdminDashboardV2({
   onTourDeleted,
 }) {
   const [activeTab, setActiveTab] = useState("tours");
+  const [blogEditorKey, setBlogEditorKey] = useState(0);
   const [tours, setTours] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
   const [journeys, setJourneys] = useState([]);
@@ -6980,6 +6974,17 @@ function AdminDashboardV2({
           </div>
           <div className="admin-card-actions">
             <button onClick={onManageTeam}>Team access</button>
+            <button
+              className="admin-multi-day-button"
+              onClick={() => {
+                setActiveTab("blogs");
+                setSearch("");
+                setPage(1);
+                setBlogEditorKey((current) => current + 1);
+              }}
+            >
+              Add a blog →
+            </button>
             {activeTab === "tours" && (
               <button
                 className="admin-multi-day-button"
@@ -6997,14 +7002,6 @@ function AdminDashboardV2({
                 onClick={() => setScreen("create")}
               >
                 Add a tour →
-              </button>
-            )}
-            {activeTab === "blogs" && (
-              <button
-                className="primary-button"
-                onClick={() => document.querySelector(".admin-blog-form")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              >
-                Create a blog →
               </button>
             )}
           </div>
@@ -7036,7 +7033,7 @@ function AdminDashboardV2({
             )}
             <div className="admin-collection-content">
               {activeTab === "blogs" ? (
-                <AdminBlogPanel blogs={blogs} headers={headers} onChanged={setBlogs} />
+                <AdminBlogPanel key={blogEditorKey} blogs={blogs} headers={headers} onChanged={setBlogs} />
               ) : activeTab === "carousel" ? (
                 <AdminCarouselPanel
                   tours={carouselTours}
