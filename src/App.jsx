@@ -951,7 +951,7 @@ function Header({
             </button>
             {toursOpen && (
               <div className="tours-dropdown">
-                <button onClick={() => selectTour("/tours")}>All tours</button>
+                <button onClick={() => selectTour("/tours")}>All Tours</button>
                 <div
                   className="nested-tour-menu"
                   onMouseEnter={() => {
@@ -973,9 +973,9 @@ function Header({
                   </button>
                   {mumbaiToursOpen && (
                     <div className="nested-tour-dropdown">
-                      <button onClick={() => selectTour("/tours?city=Mumbai")}>All Mumbai tours</button>
-                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Community")}>Mumbai community tours</button>
-                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Sightseeing")}>Mumbai sightseeing tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai")}>All Mumbai Tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Community")}>Mumbai Community Tours</button>
+                      <button onClick={() => selectTour("/tours?city=Mumbai&category=Sightseeing")}>Mumbai Sightseeing Tours</button>
                     </div>
                   )}
                 </div>
@@ -1000,9 +1000,9 @@ function Header({
                   </button>
                   {delhiToursOpen && (
                     <div className="nested-tour-dropdown">
-                      <button onClick={() => selectTour("/tours?city=Delhi")}>All Delhi tours</button>
-                      <button onClick={() => selectTour("/tours?city=Delhi&category=Community")}>Delhi community tours</button>
-                      <button onClick={() => selectTour("/tours?city=Delhi&category=City")}>Delhi sightseeing</button>
+                      <button onClick={() => selectTour("/tours?city=Delhi")}>All Delhi Tours</button>
+                      <button onClick={() => selectTour("/tours?city=Delhi&category=Community")}>Delhi Community Tours</button>
+                      <button onClick={() => selectTour("/tours?city=Delhi&category=City")}>Delhi Sightseeing</button>
                     </div>
                   )}
                 </div>
@@ -1036,17 +1036,17 @@ function Header({
               aria-expanded={tripsOpen}
               aria-haspopup="true"
             >
-              Multi-day Tours
+              Multi-Day Tours
               <span className="material-symbols-outlined">expand_more</span>
             </button>
             {tripsOpen && (
               <div className="trips-dropdown">
-                <button onClick={() => selectTrip("/trips")}>All multi-day tours</button>
+                <button onClick={() => selectTrip("/trips")}>All Multi-Day Tours</button>
                 <button onClick={() => selectTrip("/trips?category=North%20India")}>
-                  North India tours
+                  North India Tours
                 </button>
                 <button onClick={() => selectTrip("/trips?category=South%20India")}>
-                  South India tours
+                  South India Tours
                 </button>
               </div>
             )}
@@ -1129,7 +1129,7 @@ function Header({
               className={path === "/tours" && !activeCity ? "active" : ""}
               onClick={() => mobileNavigate("/tours")}
             >
-              All tours
+              All Tours
             </button>
             <button
               className={path === "/tours" && activeCity === "Mumbai" ? "active trip-option" : "trip-option"}
@@ -1141,13 +1141,13 @@ function Header({
               className="trip-option nested-trip-option"
               onClick={() => mobileNavigate("/tours?city=Mumbai&category=Community")}
             >
-              Mumbai community tours
+              Mumbai Community Tours
             </button>
             <button
               className="trip-option nested-trip-option"
               onClick={() => mobileNavigate("/tours?city=Mumbai&category=Sightseeing")}
             >
-              Mumbai sightseeing tours
+              Mumbai Sightseeing Tours
             </button>
             <button
               className={path === "/tours" && activeCity === "Delhi" ? "active trip-option" : "trip-option"}
@@ -1159,13 +1159,13 @@ function Header({
               className="trip-option nested-trip-option"
               onClick={() => mobileNavigate("/tours?city=Delhi&category=Community")}
             >
-              Delhi community tours
+              Delhi Community Tours
             </button>
             <button
               className="trip-option nested-trip-option"
               onClick={() => mobileNavigate("/tours?city=Delhi&category=City")}
             >
-              Delhi sightseeing
+              Delhi Sightseeing
             </button>
             <button
               className={path === "/tours/unique" ? "active trip-option" : "trip-option"}
@@ -1173,24 +1173,24 @@ function Header({
             >
               Festive Experiences
             </button>
-            <span>Multi-day Tours</span>
+            <span>Multi-Day Tours</span>
             <button
               className={path === "/trips" && !new URLSearchParams(query).get("mode") && !new URLSearchParams(query).get("category") ? "active trip-option" : "trip-option"}
               onClick={() => mobileNavigate("/trips")}
             >
-              All multi-day tours
+              All Multi-Day Tours
             </button>
             <button
               className={new URLSearchParams(query).get("category") === "North India" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
               onClick={() => mobileNavigate("/trips?category=North%20India")}
             >
-              North India tours
+              North India Tours
             </button>
             <button
               className={new URLSearchParams(query).get("category") === "South India" ? "active trip-option nested-trip-option" : "trip-option nested-trip-option"}
               onClick={() => mobileNavigate("/trips?category=South%20India")}
             >
-              South India tours
+              South India Tours
             </button>
             <button
               className={path === "/contact" && new URLSearchParams(query).get("intent") === "custom" ? "active trip-option" : "trip-option"}
@@ -1240,8 +1240,21 @@ function Eyebrow({ children }) {
 }
 function BlogPage() {
   const [blogs, setBlogs] = useState([]);
+  const [expandedBlogIds, setExpandedBlogIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const toggleBlogDescription = (blogId) => {
+    setExpandedBlogIds((current) => {
+      const next = new Set(current);
+      if (next.has(blogId)) {
+        next.delete(blogId);
+      } else {
+        next.add(blogId);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -1285,20 +1298,45 @@ function BlogPage() {
           <p className="form-error">{error}</p>
         ) : blogs.length ? (
           <div className="blog-grid">
-            {blogs.map((blog) => (
-              <article className="blog-card" key={blog.id}>
-                <img src={blog.image_url} alt={blog.title} />
-                <div className="blog-card-copy">
-                  <p className="blog-card-date">
-                    {blog.created_at
-                      ? new Date(blog.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
-                      : "Nomad Wanderers"}
-                  </p>
-                  <h2>{blog.title}</h2>
-                  <p>{blog.description}</p>
-                </div>
-              </article>
-            ))}
+            {blogs.map((blog) => {
+              const description = String(blog.description || "");
+              const canExpandDescription =
+                description.length > 220 ||
+                description.split(/\n\s*\n/).filter(Boolean).length > 3;
+              const isDescriptionExpanded = expandedBlogIds.has(blog.id);
+              const descriptionId = `blog-description-${blog.id}`;
+
+              return (
+                <article className="blog-card" key={blog.id}>
+                  <img src={blog.image_url} alt={blog.title} />
+                  <div className="blog-card-copy">
+                    <p className="blog-card-date">
+                      {blog.created_at
+                        ? new Date(blog.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+                        : "Nomad Wanderers"}
+                    </p>
+                    <h2>{blog.title}</h2>
+                    <p
+                      id={descriptionId}
+                      className={`blog-card-description${canExpandDescription && !isDescriptionExpanded ? " is-clamped" : ""}`}
+                    >
+                      {description}
+                    </p>
+                    {canExpandDescription && (
+                      <button
+                        className="blog-card-read-more"
+                        type="button"
+                        aria-controls={descriptionId}
+                        aria-expanded={isDescriptionExpanded}
+                        onClick={() => toggleBlogDescription(blog.id)}
+                      >
+                        {isDescriptionExpanded ? "Show Less" : "Read More"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : (
           <div className="blog-empty">
