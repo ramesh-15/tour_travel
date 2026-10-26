@@ -2667,16 +2667,16 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
       >
         <div className="multi-day-hero-content">
           <Eyebrow>Longer journeys, deeper connections</Eyebrow>
-          <h1>Multi-day Tours</h1>
+          <h1>Multi-Day Tours</h1>
         </div>
       </section>
       <section className="section multi-day-intro">
         <Eyebrow>{selectedRegion || (selectedMode ? `${selectedMode} journeys` : "Travel deeper")}</Eyebrow>
         <h2>
           {selectedRegion
-            ? `${selectedRegion} multi-day tours`
+            ? `${selectedRegion} Multi-Day Tours`
             : selectedMode
-            ? `${selectedMode} multi-day tours`
+            ? `${selectedMode} Multi-Day Tours`
             : "More time for the stories that matter"}
         </h2>
         <p className="lead">
@@ -2690,8 +2690,8 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
       <section className="section multi-day-results">
         <div className="section-heading split-heading">
           <div>
-            <Eyebrow>{selectedRegion || selectedMode || "North & South India"} multi-day tours</Eyebrow>
-            <h2>{selectedRegion ? `${selectedRegion} tours` : selectedMode ? `${selectedMode} tours` : "Explore by region"}</h2>
+            <Eyebrow>{selectedRegion || selectedMode || "North & South India"} Multi-Day Tours</Eyebrow>
+            <h2>{selectedRegion ? `${selectedRegion} Tours` : selectedMode ? `${selectedMode} Tours` : "Explore by Region"}</h2>
           </div>
           <label className="experience-filter-select multi-day-filter-select">
             <span className="sr-only">Filter multi-day tours</span>
@@ -2701,9 +2701,9 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
                 go(event.target.value ? `/trips?category=${encodeURIComponent(event.target.value)}` : "/trips")
               }
             >
-              <option value="">All multi-day tours</option>
-              <option value="North India">North India tours</option>
-              <option value="South India">South India tours</option>
+              <option value="">All Multi-Day Tours</option>
+              <option value="North India">North India Tours</option>
+              <option value="South India">South India Tours</option>
             </select>
           </label>
         </div>
@@ -2752,7 +2752,7 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
           </div>
         ) : (
           <div className="admin-empty trip-empty">
-            <h2>No {(selectedRegion || selectedMode || "North or South India").toLowerCase()} multi-day tours yet</h2>
+            <h2>No {selectedRegion || selectedMode || "North or South India"} Multi-Day Tours Yet</h2>
             <p>Tell us where you want to go and we will shape a longer journey around you.</p>
             <button className="outline-button" onClick={() => go("/contact?intent=custom")}>Plan Your Trip</button>
           </div>
@@ -2848,7 +2848,7 @@ function MultiDayTourDetail({
   const itinerary = [...(tour.itinerary || [])].sort(
     (left, right) => Number(left.day) - Number(right.day),
   );
-  const galleryImages = [tour.image, ...(tour.gallery_images || [])].filter(
+  const galleryImages = (tour.gallery_images || []).filter(
     (image, index, imagesList) => image && imagesList.indexOf(image) === index,
   );
   const availability = tour.availability || {};
@@ -4236,14 +4236,22 @@ function TourDetail({
     );
   }
 
-  const galleryImages = [tour.image, ...(tour.gallery_images || [])].filter(
+  const galleryImages = (tour.gallery_images || []).filter(
     (image, index, imagesList) => image && imagesList.indexOf(image) === index,
   );
   const inclusionOptions = tour.pricing?.inclusion_options || [];
   const inclusionModes = tour.pricing?.inclusion_modes || tour.inclusion_modes || ["Shared", "Private"];
-  const inclusions = inclusionOptions.length
-    ? inclusionOptions.filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode)).map((item) => item.text).filter(Boolean)
-    : inclusionModes.includes(selectedBookingMode) ? (tour.inclusions || []).filter(Boolean) : [];
+  const getInclusionsForMode = (mode) => (
+    inclusionOptions.length
+      ? inclusionOptions
+        .filter((item) => (item.modes || ["Shared", "Private"]).includes(mode))
+        .map((item) => item.text)
+        .filter(Boolean)
+      : inclusionModes.includes(mode)
+        ? (tour.inclusions || []).filter(Boolean)
+        : []
+  );
+  const inclusions = getInclusionsForMode(selectedBookingMode);
   const meetingDetailOptions = (tour.pricing?.meeting_detail_options || tour.meeting_detail_options || []).filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
   const selectedMeetingDetails = meetingDetailOptions.length ? meetingDetailOptions.map((item) => item.text).filter(Boolean).join("\n\n") : tour.meeting_details;
   const descriptionParagraphs = splitTourDescription(tour.description);
@@ -4320,7 +4328,29 @@ function TourDetail({
   );
   const capacityOptions = tour.pricing?.capacity_options || [];
   const selectedCapacity = capacityOptions.find((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
-  const selectedAvailabilityOptions = (tour.pricing?.availability_options || []).filter((item) => (item.modes || ["Shared", "Private"]).includes(selectedBookingMode));
+  const availabilityOptions = tour.pricing?.availability_options?.length
+    ? tour.pricing.availability_options
+    : [{
+      schedule_type: tour.schedule_type,
+      departure_date: tour.departure_date,
+      modes: ["Shared", "Private"],
+    }];
+  const selectedAvailabilityOptions = availabilityOptions.filter((item) =>
+    (item.modes || ["Shared", "Private"]).includes(selectedBookingMode),
+  );
+  const hasDailyAvailability = selectedAvailabilityOptions.some((item) =>
+    String(item.schedule_type || "").toLowerCase() === "daily",
+  );
+  const specificAvailabilityDates = [...new Set(
+    selectedAvailabilityOptions
+      .filter((item) => String(item.schedule_type || "").toLowerCase() === "specific date")
+      .map((item) => item.departure_date)
+      .filter(Boolean),
+  )].sort();
+  const formatAvailabilityDate = (date) => new Date(`${date}T00:00:00`).toLocaleDateString(
+    "en-IN",
+    { day: "numeric", month: "long", year: "numeric" },
+  );
   const groupSizeLimit =
     Number(selectedCapacity?.value) || Math.max(0, ...pricedGroupSizes) || Number(tour.capacity) || 6;
   const hasPrivateTourOption = availableBookingModes.includes("Private");
@@ -4339,7 +4369,36 @@ function TourDetail({
   const displayedGroupPriceTables = hasMultipleDurations
     ? durationGroupPriceTables
     : groupPriceTables;
-  const hasPriceAndInclusions = priceRows.length || inclusions.length || tour.inclusion_groups?.length;
+  const hasBothBookingModes =
+    cardBookingModes.includes("Shared") &&
+    cardBookingModes.includes("Private");
+  const modeComparisonDetails = hasBothBookingModes
+    ? ["Shared", "Private"].map((mode) => {
+      const modePrices = bookingPrices.availableModes.includes(mode)
+        ? bookingPrices
+        : durationOptions
+          .map((option) => getTourBookingPrices(tour, option.id))
+          .find((prices) => prices.availableModes.includes(mode)) || bookingPrices;
+      const tiers = mode === "Shared"
+        ? modePrices.sharedTiers
+        : modePrices.privateTiers;
+      const price = mode === "Shared" ? modePrices.shared : modePrices.private;
+      return {
+        mode,
+        icon: mode === "Shared" ? "groups" : "lock",
+        heading: mode === "Shared" ? "Explore together" : "Your tour, your pace",
+        description: mode === "Shared"
+          ? "Join a small group of curious travellers for a sociable, locally led experience."
+          : "Enjoy a tour reserved for your group, with a flexible pace and personal attention.",
+        price,
+        tiers,
+        inclusions: getInclusionsForMode(mode),
+      };
+    })
+    : [];
+  const hasPriceAndInclusions = hasBothBookingModes
+    ? modeComparisonDetails.some((item) => item.price > 0 || item.tiers.length || item.inclusions.length) || tour.inclusion_groups?.length
+    : priceRows.length || inclusions.length || tour.inclusion_groups?.length;
   const legacyMeetingLocation = {
     start_meeting_point: tour.start_meeting_point || "",
     start_meeting_map_url: tour.start_meeting_map_url || "",
@@ -4435,23 +4494,61 @@ function TourDetail({
             <section className="tour-reference-section tour-detail-followup" id="price-inclusions">
               <Eyebrow>Price &amp; inclusions</Eyebrow>
               <h2>Tour details</h2>
-              {hasMultipleDurations && <p className="tour-selected-duration">Compare prices for each available duration.</p>}
-              {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b><Money amount={item.value} /> <small>per person</small></b></article>)}</div>}
-              {displayedGroupPriceTables.length > 0 && (
-                <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
-                  {displayedGroupPriceTables.map((table) => (
-                    <article key={table.key || table.label}>
-                      {table.duration && <span className="tour-price-mode">{table.label} prices</span>}
-                      <h3>{table.duration || `${table.label} prices`}</h3>
-                      <div className="tour-group-price-table">
-                        <div><b>Travellers</b><b>Price per person</b></div>
-                        {table.tiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span><strong><Money amount={tier.price_per_person} /></strong></div>)}
-                      </div>
+              {hasBothBookingModes ? (
+                <div className="tour-mode-comparison">
+                  {modeComparisonDetails.map((item) => (
+                    <article className={`tour-mode-comparison-card is-${item.mode.toLowerCase()}`} key={item.mode}>
+                      <header>
+                        <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
+                        <div>
+                          <span className="tour-mode-card-label">{item.mode} Tour</span>
+                          <h3>{item.heading}</h3>
+                        </div>
+                      </header>
+                      <p className="tour-mode-summary">{item.description}</p>
+                      {item.price > 0 && (
+                        <div className="tour-mode-price">
+                          <small>{item.tiers.length ? "From" : "Price"}</small>
+                          <b><Money amount={item.price} /> <span>per person</span></b>
+                        </div>
+                      )}
+                      {item.tiers.length > 0 && (
+                        <div className="tour-group-price-table">
+                          <div><b>Travellers</b><b>Price per person</b></div>
+                          {item.tiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span><strong><Money amount={tier.price_per_person} /></strong></div>)}
+                        </div>
+                      )}
+                      {item.inclusions.length > 0 && (
+                        <div className="tour-mode-inclusions">
+                          <h4>What&apos;s included</h4>
+                          <ul>{item.inclusions.map((inclusion) => <li key={inclusion}>{inclusion}</li>)}</ul>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
+              ) : (
+                <>
+                  {hasMultipleDurations && <p className="tour-selected-duration">Compare prices for each available duration.</p>}
+                  {!hasMultipleDurations && priceRows.length > 0 && <div className="tour-price-grid">{priceRows.map((item) => <article key={item.key || item.label}><div><h3>{item.label}</h3></div><b><Money amount={item.value} /> <small>per person</small></b></article>)}</div>}
+                  {displayedGroupPriceTables.length > 0 && (
+                    <div className={`tour-group-price-tables${hasMultipleDurations ? " tour-duration-price-tables" : ""}`}>
+                      {displayedGroupPriceTables.map((table) => (
+                        <article key={table.key || table.label}>
+                          {table.duration && <span className="tour-price-mode">{table.label} prices</span>}
+                          <h3>{table.duration || `${table.label} prices`}</h3>
+                          <div className="tour-group-price-table">
+                            <div><b>Travellers</b><b>Price per person</b></div>
+                            {table.tiers.map((tier) => <div key={tier.travellers}><span>{tier.travellers} {tier.travellers === 1 ? "person" : "people"}</span><strong><Money amount={tier.price_per_person} /></strong></div>)}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {inclusions.length > 0 && <div className="tour-detail-inclusions"><article><h3>Included</h3><ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article></div>}
+                </>
               )}
-              {(inclusions.length > 0 || tour.inclusion_groups?.length > 0) && <div className="tour-detail-inclusions">{inclusions.length > 0 && <article><h3>Included</h3><ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul></article>}{(tour.inclusion_groups || []).map((group) => <article key={group.title}><h3>{group.title}</h3><ul>{(group.items || []).map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>}
+              {tour.inclusion_groups?.length > 0 && <div className="tour-detail-inclusions">{(tour.inclusion_groups || []).map((group) => <article key={group.title}><h3>{group.title}</h3><ul>{(group.items || []).map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>}
             </section>
           )}
         </div>
@@ -4492,17 +4589,22 @@ function TourDetail({
           <button className="primary-button booking-card-cta" onClick={openBooking}>
             Book this tour →
           </button>
-          {selectedAvailabilityOptions.length > 0 && <div className="tour-booking-notes"><p><b>Availability:</b> {selectedAvailabilityOptions.map((item) => item.schedule_type === "Specific date" && item.departure_date ? `${item.schedule_type} · ${item.departure_date}` : item.schedule_type).join(" · ")}</p></div>}
           <div className="tour-booking-notes">
+            {(hasDailyAvailability || specificAvailabilityDates.length > 0) && (
+              <div className="tour-booking-availability">
+                <b>Availability</b>
+                {hasDailyAvailability && <p>Daily</p>}
+                {specificAvailabilityDates.length > 0 && (
+                  <>
+                    <p>Specific dates</p>
+                    <ul>{specificAvailabilityDates.map((date) => <li key={date}>{formatAvailabilityDate(date)}</li>)}</ul>
+                  </>
+                )}
+              </div>
+            )}
             <p>
               <b>Group size: up to {groupSizeLimit}</b>
             </p>
-            {inclusions.length > 0 && (
-              <div className="tour-booking-inclusions">
-                <b>Included in this {selectedBookingMode.toLowerCase()} tour</b>
-                <ul>{inclusions.map((item) => <li key={item}>{item}</li>)}</ul>
-              </div>
-            )}
             {hasPrivateTourOption && (
               <p className="private-tour-note">
                 If you wish to start at a different time, get picked up at a different location, or entirely customise the tour, please contact us at <a href="tel:+919619952139">+91 96199 52139</a>.
@@ -4533,7 +4635,6 @@ function TourDetail({
       {galleryImages.length > 0 && (
         <section className="section gallery" id="tour-gallery">
           <Eyebrow>Gallery</Eyebrow>
-          <h2>{tour.title}</h2>
           <div className="gallery-grid">{galleryImages.map((image, index) => <img className={index === 0 ? "gallery-main" : ""} src={image} alt={`${tour.title} ${index + 1}`} key={image} />)}</div>
         </section>
       )}

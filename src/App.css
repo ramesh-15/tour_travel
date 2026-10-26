@@ -1573,6 +1573,20 @@ h3 {
 .tour-price-grid b { grid-column: 1 / -1; margin-top: 12px; color: var(--teal); font-size: 25px; }
 .tour-price-grid small { color: var(--muted); font-size: 12px; font-weight: 600; }
 .tour-price-grid ul { grid-column: 1 / -1; margin: 4px 0 0; padding: 16px 0 0; border-top: 1px solid #e3eceb; color: var(--muted); line-height: 1.8; }
+.tour-mode-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 920px; }
+.tour-mode-comparison-card { display: grid; align-content: start; gap: 17px; padding: 26px; border: 1px solid #dbe8e6; border-radius: 16px; background: #fff; box-shadow: 0 12px 28px rgba(0, 63, 64, .06); }
+.tour-mode-comparison-card.is-shared { border-color: #9dd4d0; background: #f8fcfb; }
+.tour-mode-comparison-card header { display: flex; align-items: center; gap: 14px; }
+.tour-mode-comparison-card header > .material-symbols-outlined { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: #e2f4f1; color: var(--teal); font-size: 25px; }
+.tour-mode-card-label { display: block; margin-bottom: 3px; color: var(--teal); font-size: 11px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.tour-mode-comparison-card h3 { margin: 0; color: var(--ink); font-size: 22px; }
+.tour-mode-summary { margin: 0; color: var(--muted); line-height: 1.6; }
+.tour-mode-price { display: grid; gap: 4px; padding: 15px 0; border-top: 1px solid #dce9e6; border-bottom: 1px solid #dce9e6; }
+.tour-mode-price small { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.tour-mode-price b { color: var(--teal); font-size: 27px; line-height: 1.1; }
+.tour-mode-price b span { color: var(--muted); font-size: 12px; font-weight: 600; }
+.tour-mode-inclusions h4 { margin: 0 0 10px; color: var(--ink); font-size: 15px; }
+.tour-mode-inclusions ul { display: grid; gap: 8px; margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5; }
 .tour-price-mode { display: block; margin-bottom: 5px; color: var(--teal); font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .tour-group-price-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 920px; margin-top: 18px; }
 @media (min-width: 560px) {
@@ -5132,6 +5146,7 @@ textarea:focus-visible {
   .tour-reference-section { scroll-margin-top: 145px; }
   .tour-price-grid,
   .tour-group-price-tables,
+  .tour-mode-comparison,
   .tour-detail-inclusions,
   .meeting-grid,
   .tour-reviews-grid,
@@ -7269,6 +7284,9 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 .tour-booking-notes b { display: block; margin-bottom: 2px; color: var(--ink); font-size: 13px; }
+.tour-booking-availability { display: grid; gap: 4px; }
+.tour-booking-availability ul { display: grid; gap: 3px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.tour-booking-availability li::marker { color: var(--teal); }
 .tour-booking-notes a { color: var(--teal); font-weight: 800; text-decoration: none; white-space: nowrap; }
 .tour-booking-notes a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tour-booking-notes .private-tour-note { padding-left: 11px; border-left: 3px solid var(--aqua); color: #426061; }
@@ -7992,9 +8010,9 @@ p,
 .blog-page-heading { max-width: 720px; margin: 0 0 34px; }
 .blog-page-heading h2 { margin: 13px 0 12px; color: var(--ink); font-size: clamp(32px, 4vw, 50px); line-height: 1.08; letter-spacing: -.04em; }
 .blog-page-heading p { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.65; }
-.blog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 25px; }
+.blog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; }
 .blog-card { overflow: hidden; border: 1px solid #d4e6e2; border-radius: 20px; background: #fff; box-shadow: 0 9px 25px rgba(0, 54, 52, .06); }
-.blog-card > img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+.blog-card > img { display: block; width: 40%; height: auto; margin: 0 auto; object-fit: contain; }
 .blog-card-copy { padding: 23px; }
 .blog-card-copy h2 { margin: 6px 0 10px; color: #173a38; font-size: 24px; line-height: 1.2; }
 .blog-card-copy p { margin: 0; color: var(--muted); line-height: 1.65; white-space: pre-line; }
@@ -8028,6 +8046,6 @@ p,
 .admin-blog-item h3 { margin: 6px 0; font-size: 19px; }
 .admin-blog-item p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .admin-blog-item span { color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-@media (max-width: 850px) { .blog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 850px) { .blog-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .blog-grid { grid-template-columns: 1fr; } .blog-page-hero { padding: 58px 24px; } .blog-page-hero h1 { font-size: 42px; } .admin-blog-form { padding: 20px; } .admin-blog-item { grid-template-columns: 1fr; gap: 12px; } .admin-blog-item > img { width: 100%; height: auto; aspect-ratio: 16 / 8; } }
 
