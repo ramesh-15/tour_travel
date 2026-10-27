@@ -1366,15 +1366,6 @@ def update_staff_booking(booking_id: int, data: BookingUpdate, account: dict[str
             str(booking.get("customer_email") or ""),
             account.get("id") if isinstance(account.get("id"), int) else None,
         )
-        try:
-            deliver_booking_whatsapp_confirmations(
-                booking,
-                "",
-                account.get("id") if isinstance(account.get("id"), int) else None,
-            )
-        except ValueError:
-            # A booking without a phone number can still be confirmed by staff.
-            pass
     return StaffBooking(**booking)
 
 
