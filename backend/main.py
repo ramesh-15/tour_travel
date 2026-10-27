@@ -355,8 +355,8 @@ class BlogInput(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     description: str = Field(min_length=10, max_length=10000)
     image_url: HttpUrl
+    author_name: str = Field(default="", max_length=120)
     published: bool = True
-
 
 class Blog(BlogInput):
     id: int
@@ -1366,6 +1366,15 @@ def update_staff_booking(booking_id: int, data: BookingUpdate, account: dict[str
             str(booking.get("customer_email") or ""),
             account.get("id") if isinstance(account.get("id"), int) else None,
         )
+        try:
+            deliver_booking_whatsapp_confirmations(
+                booking,
+                "",
+                account.get("id") if isinstance(account.get("id"), int) else None,
+            )
+        except ValueError:
+            # A booking without a phone number can still be confirmed by staff.
+            pass
     return StaffBooking(**booking)
 
 

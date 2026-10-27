@@ -1314,6 +1314,7 @@ function BlogPage() {
                       {blog.created_at
                         ? new Date(blog.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
                         : "Nomad Wanderers"}
+                      {blog.author_name?.trim() && ` | ${blog.author_name.trim()}`}
                     </p>
                     <h2>{blog.title}</h2>
                     <p
@@ -7284,7 +7285,7 @@ function AdminDashboardV2({
 }
 
 function AdminBlogPanel({ blogs = [], headers, onChanged }) {
-  const emptyForm = { title: "", description: "", image_url: "", published: true };
+  const emptyForm = { title: "", description: "", image_url: "", author_name: "", published: true };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [imageFile, setImageFile] = useState(null);
@@ -7298,7 +7299,7 @@ function AdminBlogPanel({ blogs = [], headers, onChanged }) {
     setStatus("");
   };
   const startEdit = (blog) => {
-    setForm({ title: blog.title || "", description: blog.description || "", image_url: blog.image_url || "", published: Boolean(blog.published) });
+    setForm({ title: blog.title || "", description: blog.description || "", image_url: blog.image_url || "", author_name: blog.author_name || "", published: Boolean(blog.published) });
     setEditingId(blog.id);
     setImageFile(null);
     setStatus("");
@@ -7357,6 +7358,7 @@ function AdminBlogPanel({ blogs = [], headers, onChanged }) {
       </div>
       <form className="admin-blog-form" onSubmit={save}>
         <label>Blog title<input required minLength="3" maxLength="200" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Discover Mumbai beyond the guidebooks" /></label>
+        <label>Customer name<input maxLength="120" value={form.author_name} onChange={(event) => setForm((current) => ({ ...current, author_name: event.target.value }))} placeholder="Name shown beside the blog date" /></label>
         <label>Description<textarea required minLength="10" maxLength="10000" rows="6" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Write the story for travellers..." /></label>
         <label>Photo<input type="file" accept="image/*" onChange={(event) => setImageFile(event.target.files?.[0] || null)} /></label>
         {(imageFile || form.image_url) && <img className="admin-blog-preview" src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="Blog preview" />}

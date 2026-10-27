@@ -299,6 +299,7 @@ def initialize_database() -> None:
             title VARCHAR(200) NOT NULL,
             description TEXT NOT NULL,
             image_url VARCHAR(2048) NOT NULL,
+            author_name VARCHAR(120) NOT NULL DEFAULT '',
             published BOOLEAN NOT NULL DEFAULT TRUE,
             created_at DATETIME(6) NOT NULL,
             updated_at DATETIME(6) NOT NULL
@@ -484,6 +485,7 @@ def initialize_database() -> None:
             ("reviews", "guide_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (guide_rating >= 1 AND guide_rating <= 5)"),
             ("reviews", "meeting_or_pickup_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (meeting_or_pickup_rating >= 1 AND meeting_or_pickup_rating <= 5)"),
             ("reviews", "value_for_money_rating", "TINYINT NOT NULL DEFAULT 5 CHECK (value_for_money_rating >= 1 AND value_for_money_rating <= 5)"),
+            ("blogs", "author_name", "VARCHAR(120) NOT NULL DEFAULT ''"),
         ):
             _ensure_column(connection, table, column, definition)
         _execute(connection, "UPDATE users SET username = CONCAT('user', id) WHERE username IS NULL OR username = ''")
@@ -613,17 +615,17 @@ def get_blog(blog_id: int) -> dict[str, Any] | None:
 
 def save_blog(data: dict[str, Any], blog_id: int | None = None) -> dict[str, Any] | None:
     now = _utc_now()
-    fields = ("title", "description", "image_url", "published")
+    fields = ("title", "description", "image_url", "author_name", "published")
     values = tuple(data[field] for field in fields)
     with database() as connection:
         if blog_id is None:
             blog_id = _insert_and_get_id(
                 connection,
-                "INSERT INTO blogs (title, description, image_url, published, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                "INSERT INTO blogs (title, description, image_url, author_name, published, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (*values, now, now),
             )
         else:
-            if not _execute(connection, "UPDATE blogs SET title=%s, description=%s, image_url=%s, published=%s, updated_at=%s WHERE id=%s", (*values, now, blog_id)):
+            if not _execute(connection, "UPDATE blogs SET title=%s, description=%s, image_url=%s, author_name=%s, published=%s, updated_at=%s WHERE id=%s", (*values, now, blog_id)):
                 return None
     return get_blog(blog_id)
 

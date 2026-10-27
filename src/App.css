@@ -8012,7 +8012,7 @@ p,
 .blog-page-heading p { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.65; }
 .blog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; }
 .blog-card { overflow: hidden; border: 1px solid #d4e6e2; border-radius: 20px; background: #fff; box-shadow: 0 9px 25px rgba(0, 54, 52, .06); }
-.blog-card > img { display: block; width: 40%; height: auto; margin: 0 auto; object-fit: contain; }
+.blog-card > img { display: block; width: 100%; height: clamp(220px, 22vw, 340px); object-fit: cover; object-position: center; }
 .blog-card-copy { padding: 23px; }
 .blog-card-copy h2 { margin: 6px 0 10px; color: #173a38; font-size: 24px; line-height: 1.2; }
 .blog-card-copy p { margin: 0; color: var(--muted); line-height: 1.65; white-space: pre-line; }
