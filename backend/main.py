@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+import requests
 
 import db_models
 import config
@@ -1306,15 +1307,38 @@ def verify_razorpay_payment(
             email_sent,
         )
         try:
-            deliver_booking_whatsapp_confirmations(
-                booking,
-                str((customer or {}).get("phone", "")),
-                None,
+            customer_name = str(
+                booking.get("customer_name")
+                or customer.get("name")
+                or "Guest"
             )
+            LOGGER.info(f"Name : {customer_name}")
+
+            tour_name = str(booking.get("tour_title") or "Your Tour")
+            LOGGER.info(f"Tour Name : {tour_name}")
+            
+
+            travel_date = booking.get("travel_date")
+            LOGGER.info(f"Travel Date : {travel_date}")
+            if isinstance(travel_date, (date, datetime)):
+                travel_date = travel_date.strftime("%d %B %Y")
+            else:
+                travel_date = str(travel_date or "To be confirmed")
+            LOGGER.info(f"Travel Date : {travel_date}")
+
+            
+            booking_id = booking.get("tour_id")
+            contact_phone = booking.get("contact_phone")
+            contact_phone = contact_phone.lstrip("+")
+            send_whatsapp_booking_confirmation(customer_name=customer_name, tour_name=tour_name, travel_date=travel_date, booking_id=booking_id, contact_phone=contact_phone)
+            LOGGER.info(f" Traveller Booking confirmation WhatsApp result: booking_id={booking['id']} success=True")
+            contact_phone='9196199 52139'
+            send_whatsapp_booking_confirmation(customer_name=customer_name, tour_name=tour_name, travel_date=travel_date, booking_id=booking_id, contact_phone=contact_phone)
+            LOGGER.info(f" Admin Booking confirmation WhatsApp result: booking_id={booking['id']} success=True")
         except ValueError:
             # A legacy booking might not yet have a saved contact number.
             # Never turn a successfully paid booking into a failed response.
-            pass
+            LOGGER.info(f"Booking confirmation WhatsApp result: booking_id={booking['id']} success=False")
     return RazorpayVerificationResult(success=True, booking=Booking(**booking))
 
 
@@ -1566,6 +1590,99 @@ def delete_custom_journey(journey_id: int) -> None:
     if not db_models.delete_custom_journey(journey_id):
         raise HTTPException(status_code=404, detail="Custom journey not found")
 
+ACCESS_TOKEN = "EAAXkQwMVhLEBSiZAFBt1iZC7fTkMi5ZBT9XObSg8l7Pi4Pza3Yuqd6cGWbOHeIHYIXSZCEs62fHoSREZCz498SksAo0NYP9a81dSqrwxsvGWSJaCZAqSTtbN7NgeeZBETqZCsZCAmqeoGwhL4cCZAeCzY4a4QJqqeNYuzQB6U0rt1S3rG8y8aKaZCvc2kzW5dXMZCwZDZD"
+PHONE_NUMBER_ID = "1362908966906121"
+API_VERSION = "v22.0"
+
+TEMPLATE_NAME = "nomad_wonderers_test_templetee"
+TEMPLATE_LANGUAGE = "en"
+
+
+# CUSTOMER_PHONE = "919000590442"
+# CUSTOMER_NAME = "nayak"
+# TOUR_TITLE = "Kalsubai Peak"
+# TRAVEL_DATE = "30 Oct 2026"
+# BOOKING_REFERENCE = "NM06202663"
+
+def send_whatsapp_booking_confirmation(customer_name: str, tour_name: str, travel_date: str, booking_id: str, contact_phone: str):
+    
+    
+
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{API_VERSION}/{PHONE_NUMBER_ID}/messages"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": contact_phone,
+        "type": "template",
+        "template": {
+            "name": TEMPLATE_NAME,
+            "language": {
+                "code": TEMPLATE_LANGUAGE
+            },
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {
+                            "type": "text",
+                            "text": customer_name
+                        },
+                        {
+                            "type": "text",
+                            "text": tour_name
+                        },
+                        {
+                            "type": "text",
+                            "text": travel_date
+                        },
+                        {
+                            "type": "text",
+                            "text": booking_id
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        print("Status Code:", response.status_code)
+
+        try:
+            result = response.json()
+        except ValueError:
+            print("Response:", response.text)
+            return None
+
+        print("Response:", json.dumps(result, indent=4))
+
+        if response.status_code == 200:
+            print("WhatsApp message accepted by Meta!")
+            return result
+
+        print("WhatsApp message failed!")
+        return None
+
+    except requests.exceptions.RequestException as error:
+        print("Error sending WhatsApp:", str(error))
+        return None
 
 SMTP_HOST="smtp.gmail.com"
 SMTP_PORT="587"
@@ -1573,6 +1690,7 @@ SMTP_USERNAME="wanderersnomad@gmail.com"
 SMTP_PASSWORD="yzve wqnz uxmy ezop"
 SMTP_FROM_EMAIL="wanderersnomad@gmail.com"
 SMTP_FROM_NAME="Nomad Wanderers"
+
 
 
 def send_email_to_customer(
