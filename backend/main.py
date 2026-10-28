@@ -1426,19 +1426,6 @@ def resend_booking_confirmation(booking_id: int, data: ConfirmationRequest, acco
             email_sent += int(email_notification.get("delivery_status") == "sent")
         else:
             customer = db_models.get_user(int(booking["user_id"]))
-            try:
-                whatsapp_notifications = deliver_booking_whatsapp_confirmations(
-                    booking,
-                    str((customer or {}).get("phone", "")),
-                    account.get("id") if isinstance(account.get("id"), int) else None,
-                )
-            except ValueError as error:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
-            notifications.extend(whatsapp_notifications)
-            whatsapp_sent += sum(
-                int(notification.get("delivery_status") == "sent")
-                for notification in whatsapp_notifications
-            )
 
     summaries = []
     if whatsapp_sent:
