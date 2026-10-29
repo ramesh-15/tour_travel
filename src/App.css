@@ -1573,7 +1573,7 @@ h3 {
 .tour-price-grid b { grid-column: 1 / -1; margin-top: 12px; color: var(--teal); font-size: 25px; }
 .tour-price-grid small { color: var(--muted); font-size: 12px; font-weight: 600; }
 .tour-price-grid ul { grid-column: 1 / -1; margin: 4px 0 0; padding: 16px 0 0; border-top: 1px solid #e3eceb; color: var(--muted); line-height: 1.8; }
-.tour-mode-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 920px; }
+.tour-mode-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; width: 100%; max-width: none; }
 .tour-mode-comparison-card { display: grid; align-content: start; gap: 17px; padding: 26px; border: 1px solid #dbe8e6; border-radius: 16px; background: #fff; box-shadow: 0 12px 28px rgba(0, 63, 64, .06); }
 .tour-mode-comparison-card.is-shared { border-color: #9dd4d0; background: #f8fcfb; }
 .tour-mode-comparison-card header { display: flex; align-items: center; gap: 14px; }
@@ -1634,19 +1634,26 @@ h3 {
 .tour-review-meta a:hover { text-decoration: underline; }
 .detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(310px, 0.7fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   gap: clamp(32px, 3vw, 48px);
   align-items: start;
+}
+.detail-content,
+.booking-card {
+  min-width: 0;
 }
 .detail-content h2 {
   color: var(--teal);
   margin-bottom: 20px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .detail-content .lead {
   font-size: 20px;
 }
-.tour-description { display: grid; gap: 18px; max-width: 900px; }
+.tour-description { display: block; width: 100%; max-width: none; }
 .detail-content .tour-description .lead { max-width: none; margin: 0; }
+.detail-content .tour-description p { width: 100%; line-height: 1.6; }
 .detail-content .tour-detail-followup {
   padding: 36px 0 0;
 }
@@ -1682,6 +1689,8 @@ h3 {
   margin: 0;
 }
 .booking-card {
+  width: 100%;
+  box-sizing: border-box;
   padding: 30px;
   border: 1px solid var(--line);
   border-radius: 15px;
@@ -1750,22 +1759,41 @@ h3 {
 }
 .gallery-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  grid-template-rows: 230px 230px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: auto;
   gap: 18px;
 }
-.gallery-grid img {
+.gallery-grid.gallery-count-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.gallery-grid.gallery-count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.gallery-grid .gallery-tile {
+  position: relative;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  align-self: start;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #f3f8f7;
+}
+.gallery-grid .gallery-tile img {
+  position: relative;
+  z-index: 1;
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  border-radius: 12px;
+  object-fit: contain;
+  object-position: center;
   transition: transform 0.5s;
 }
 .gallery-grid .gallery-main {
-  grid-row: span 2;
-}
-.gallery-grid img:last-child {
-  grid-column: span 2;
+  grid-row: auto;
+  grid-column: auto;
 }
 .contact-hero {
   min-height: 450px;
@@ -2253,15 +2281,8 @@ h3 {
     grid-template-columns: 1fr;
   }
   .gallery-grid {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 220px 160px 160px;
-  }
-  .gallery-grid .gallery-main {
-    grid-column: span 2;
-    grid-row: auto;
-  }
-  .gallery-grid img:last-child {
-    grid-column: span 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 220px;
   }
   .contact-links {
     gap: 12px;
@@ -5099,7 +5120,7 @@ textarea:focus-visible {
     font-size: 20px;
   }
   .gallery-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .gallery-main {
     grid-row: auto;
@@ -5190,6 +5211,12 @@ textarea:focus-visible {
 }
 .admin-gallery-preview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .admin-gallery-preview img { width: 100%; aspect-ratio: 1; border-radius: 7px; object-fit: cover; }
+.admin-gallery-item { position: relative; display: inline-flex; width: 112px; height: 88px; margin: 10px 8px 0 0; vertical-align: top; }
+.admin-gallery-item img { width: 100%; height: 100%; border-radius: 7px; object-fit: cover; border: 1px solid var(--line); }
+.admin-gallery-item .repeat-remove { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; padding: 0; display: grid; place-items: center; background: #fff; }
+.admin-gallery-file-list { display: grid; gap: 6px; margin-top: 10px; }
+.admin-gallery-file { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 13px; }
+.admin-gallery-file .repeat-remove { flex: 0 0 auto; }
 .admin-saved-video-link { display: inline-block; margin-top: 8px; color: var(--teal); font-size: 13px; font-weight: 800; }
 .admin-bulk-actions {
   display: flex;
@@ -7358,6 +7385,16 @@ textarea:focus-visible {
    same small edge gap to customer pages, traveller accounts, and every admin
    workspace without changing the compact mobile layout. */
 @media (min-width: 801px) {
+  .top-space > .section {
+    box-sizing: border-box;
+    width: min(calc(100% - 104px), 1600px);
+    max-width: 1600px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
   .top-space > .section,
   .home-page > .section,
   .home-page > .home-welcome,
@@ -7886,18 +7923,21 @@ p,
 @media (max-width: 800px) {
   #tour-gallery .gallery-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
+    grid-auto-rows: auto;
   }
 
+  #tour-gallery .gallery-grid .gallery-tile,
   #tour-gallery .gallery-grid .gallery-main,
-  #tour-gallery .gallery-grid img:last-child {
+  #tour-gallery .gallery-grid .gallery-tile:last-child {
+    height: auto;
+    aspect-ratio: 4 / 3;
     grid-column: auto;
     grid-row: auto;
   }
 
   #tour-gallery .gallery-grid img {
-    height: auto;
-    aspect-ratio: 16 / 10;
+    height: 100%;
+    aspect-ratio: auto;
   }
 }
 
@@ -8048,4 +8088,30 @@ p,
 .admin-blog-item span { color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 @media (max-width: 850px) { .blog-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .blog-grid { grid-template-columns: 1fr; } .blog-page-hero { padding: 58px 24px; } .blog-page-hero h1 { font-size: 42px; } .admin-blog-form { padding: 20px; } .admin-blog-item { grid-template-columns: 1fr; gap: 12px; } .admin-blog-item > img { width: 100%; height: auto; aspect-ratio: 16 / 8; } }
+
+/* Keep every desktop tour section on the same left and right edges. */
+@media (min-width: 801px) {
+  .top-space > .section {
+    width: min(calc(100% - 104px), 1600px) !important;
+    max-width: 1600px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .top-space > .section .tour-highlight-list,
+  .top-space > .section .meeting-grid,
+  .top-space > .section .tour-meeting-details,
+  .top-space > .section .tour-meeting-location-groups,
+  .top-space > .section .tour-meeting-locations,
+  .top-space > .section .tour-map-embed,
+  .top-space > .section .tour-reviews-grid,
+  .top-space > .section .tour-detail-inclusions,
+  .top-space > .section .tour-price-grid,
+  .top-space > .section .tour-group-price-tables {
+    width: 100%;
+    max-width: none;
+  }
+}
 

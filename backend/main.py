@@ -43,6 +43,7 @@ MAX_TOUR_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_TOUR_VIDEO_BYTES = 100 * 1024 * 1024
 TOUR_IMAGE_TYPES = {
     "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
 }
@@ -304,7 +305,7 @@ class TourInput(BaseModel):
     inclusions: list[str] = Field(default_factory=list, max_length=12)
     inclusion_modes: list[BookingMode] = Field(default_factory=lambda: ["Shared", "Private"], max_length=2)
     inclusion_options: list[dict[str, object]] = Field(default_factory=list, max_length=30)
-    gallery_images: list[str] = Field(default_factory=list, max_length=10)
+    gallery_images: list[str] = Field(default_factory=list)
     faq_items: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     review_items: list[TourReviewInput] = Field(default_factory=list, max_length=50)
     meeting_details: str = Field(default="", max_length=2000)
@@ -855,7 +856,14 @@ def get_home_reviews() -> list[TourReview]:
 @app.post("/api/admin/tour-images", dependencies=[Depends(admin_required)])
 async def upload_tour_image(image: UploadFile = File(...)) -> dict[str, str]:
     """Store an admin-uploaded tour image and return its public URL."""
-    extension = TOUR_IMAGE_TYPES.get(image.content_type or "")
+    extension = TOUR_IMAGE_TYPES.get((image.content_type or "").lower())
+    if not extension:
+        extension = {
+            ".jpg": ".jpg",
+            ".jpeg": ".jpg",
+            ".png": ".png",
+            ".webp": ".webp",
+        }.get(Path(image.filename or "").suffix.lower())
     if not extension:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Upload a JPEG, PNG, or WebP image.")
 

@@ -5,6 +5,7 @@ import roadTripCar from "./assets/road-trip-car.png";
 import rajasthanCamelTour from "./assets/rajasthan-desert-camel-tour.png";
 import footerCitySkyline from "./assets/footer-city-skyline.png";
 import founderPortrait from "./assets/founder-portrait.png";
+import mumbaiBlogHero from "./assets/mumbai-blog-hero.png";
 import UserPortal from "./UserPortal";
 import { AdminTeamPortal, StaffPortal } from "./StaffPortal";
 import UnifiedLogin from "./UnifiedLogin";
@@ -150,6 +151,73 @@ function apiTourToUi(tour) {
       maximumFractionDigits: 0,
     }).format(tour.price),
   };
+}
+
+function appendUniqueGalleryFiles(currentFiles, selectedFiles) {
+  const nextFiles = Array.from(selectedFiles || []);
+  const existingKeys = new Set(
+    currentFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+  );
+  return [
+    ...currentFiles,
+    ...nextFiles.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    }),
+  ];
+}
+
+function GalleryImageUploader({ files, onAdd, onRemove, savedCount = 0 }) {
+  const inputRef = useRef(null);
+
+  return (
+    <div className="admin-gallery-uploader">
+      <button
+        type="button"
+        className="repeat-add"
+        onClick={() => inputRef.current?.click()}
+      >
+        + {files.length ? "Add another gallery image" : "Upload gallery image"}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onAdd(file);
+          event.target.value = "";
+        }}
+      />
+      <small>
+        {files.length
+          ? `${files.length} new gallery image(s) ready to upload. Use the button to add another.`
+          : savedCount
+            ? `${savedCount} saved image(s). Use the button to add another.`
+            : "Upload one image, then use Add another gallery image for the next one."}
+      </small>
+      {files.length > 0 && (
+        <div className="admin-gallery-file-list">
+          {files.map((file, index) => (
+            <div className="admin-gallery-file" key={`${file.name}-${file.size}-${file.lastModified}`}>
+              <span>{file.name}</span>
+              <button
+                type="button"
+                className="repeat-remove"
+                onClick={() => onRemove(index)}
+                aria-label={`Remove selected image ${file.name}`}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatApiError(detail, fallback = "Unable to complete this request.") {
@@ -1279,7 +1347,7 @@ function BlogPage() {
     <main className="top-space blog-page">
       <section className="city-tour-intro blog-page-intro">
         <div className="city-tour-hero">
-          <img src={images.delhi} alt="India Gate in New Delhi" />
+          <img src={mumbaiBlogHero} alt="Mumbai city landmarks, local train and street life" />
           <div className="city-tour-hero-content">
             <h1>Blog</h1>
             <p>Stories, places & travel inspiration</p>
@@ -3013,7 +3081,7 @@ function MultiDayTourDetail({
 
         <aside className="multi-day-booking-card">
           {tour.mode && <span>{tour.mode} journey</span>}
-          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : <>From <Money amount={basePrice} /> per person</>}</h2>}
+          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : <><Money amount={basePrice} /> <small>Per person starting price</small></>}</h2>}
           {availability.booking_type && <p>{availability.booking_type}{availability.max_travellers ? ` · up to ${availability.max_travellers} guests` : ""}</p>}
           <button className="primary-button" onClick={openBooking}>{bookingLabel} →</button>
         </aside>
@@ -3789,9 +3857,9 @@ function TourEditor({ tour, session, onCancel, onSaved }) {
             />
           </label>
           <label>
-            Gallery images <small>(upload up to 10 JPEG, PNG, or WebP files)</small>
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} />
-            <small>{galleryFiles.length ? `${galleryFiles.length} image(s) ready to upload.` : tour?.gallery_images?.length ? `${tour.gallery_images.length} saved image(s). Choose files to replace them.` : "Choose up to 10 images."}</small>
+            Gallery images <small>(upload JPG, JPEG, or PNG files)</small>
+            <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => setGalleryFiles((current) => appendUniqueGalleryFiles(current, event.target.files))} />
+            <small>{galleryFiles.length ? `${galleryFiles.length} image(s) ready to upload.` : tour?.gallery_images?.length ? `${tour.gallery_images.length} saved image(s). Choose files to replace them.` : "Choose one or more images."}</small>
           </label>
           <label>
             Traveller experience video <small>(upload MP4, WebM, or MOV; maximum 100 MB)</small>
@@ -4108,6 +4176,7 @@ function TourDetail({
   const [tour, setTour] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [recommendedTours, setRecommendedTours] = useState([]);
   const [bookingOpen, setBookingOpen] = useState(
     initialBooking && Boolean(session?.token),
   );
@@ -4153,6 +4222,40 @@ function TourDetail({
       active = false;
     };
   }, [tourId, city, category]);
+
+  useEffect(() => {
+    if (!tour?.city) return undefined;
+    let active = true;
+    const search = new URLSearchParams({
+      page: "1",
+      page_size: "100",
+      city: tour.city,
+      category: tour.category || "",
+    });
+    fetch(`${apiBaseUrl}/api/tours?${search}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((body) => {
+        if (!active) return;
+        const items = Array.isArray(body.items) ? body.items : [];
+        setRecommendedTours(
+          items
+            .filter((item) => (
+              item.id !== tour.id &&
+              !isMultiDayTour(item) &&
+              String(item.city || "").trim().toLowerCase() === String(tour.city || "").trim().toLowerCase() &&
+              String(item.category || "").trim().toLowerCase() === String(tour.category || "").trim().toLowerCase()
+            ))
+            .slice(0, 3)
+            .map(apiTourToUi),
+        );
+      })
+      .catch(() => {
+        if (active) setRecommendedTours([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tour]);
 
   const durationOptions = getTourDurationOptions(tour);
   const durationOptionIdsKey = durationOptions.map((option) => option.id).join(",");
@@ -4359,11 +4462,11 @@ function TourDetail({
     ? durationPriceRows
     : [
         selectedBookingMode === "Shared" && sharedPrice > 0 && {
-          label: bookingPrices.sharedTiers.length ? "Shared tour · from" : "Shared tour",
+          label: "Shared tour",
           value: sharedPrice,
         },
         selectedBookingMode === "Private" && privatePrice > 0 && {
-          label: bookingPrices.privateTiers.length ? "Private tour · from" : "Private tour",
+          label: "Private tour",
           value: privatePrice,
         },
       ].filter(Boolean);
@@ -4477,11 +4580,7 @@ function TourDetail({
           <h2>{tour.title}</h2>
           {descriptionParagraphs.length > 0 && (
             <div className="tour-description">
-              {descriptionParagraphs.map((paragraph, index) => (
-                <p className="lead" key={`${index}-${paragraph.slice(0, 24)}`}>
-                  {paragraph}
-                </p>
-              ))}
+              <p className="lead">{descriptionParagraphs.join(" ")}</p>
             </div>
           )}
           {tour.traveller_video_url && (
@@ -4509,7 +4608,7 @@ function TourDetail({
                       <p className="tour-mode-summary">{item.description}</p>
                       {item.price > 0 && (
                         <div className="tour-mode-price">
-                          <small>{item.tiers.length ? "From" : "Price"}</small>
+                          <small>{item.tiers.length ? "Starting price" : "Price"}</small>
                           <b><Money amount={item.price} /> <span>per person</span></b>
                         </div>
                       )}
@@ -4580,11 +4679,8 @@ function TourDetail({
           )}
           {selectedBookingPrice > 0 && (
             <div className="price">
-              <small>
-                {selectedBookingMode} tour{selectedBookingTierCount ? " · from" : ""}
-              </small>
               <b className="booking-price-by-mode"><Money amount={selectedBookingPrice} /></b>
-              <span>per person</span>
+              <span>Per person starting price</span>
             </div>
           )}
           <button className="primary-button booking-card-cta" onClick={openBooking}>
@@ -4636,7 +4732,7 @@ function TourDetail({
       {galleryImages.length > 0 && (
         <section className="section gallery" id="tour-gallery">
           <Eyebrow>Gallery</Eyebrow>
-          <div className="gallery-grid">{galleryImages.map((image, index) => <img className={index === 0 ? "gallery-main" : ""} src={image} alt={`${tour.title} ${index + 1}`} key={image} />)}</div>
+          <div className={`gallery-grid gallery-count-${Math.min(galleryImages.length, 3)}`}>{galleryImages.map((image, index) => <div className={`gallery-tile ${index === 0 ? "gallery-main" : ""}`} key={image}><img src={image} alt={`${tour.title} ${index + 1}`} /></div>)}</div>
         </section>
       )}
       {hasMeetingInformation && (
@@ -4734,6 +4830,27 @@ function TourDetail({
           <Eyebrow>FAQs</Eyebrow>
           <h2>Before you go</h2>
           <div className="tour-highlight-list">{faqs.map((faq, index) => <details key={`${faq.question}-${index}`}><summary>{faq.question}<span className="material-symbols-outlined">add</span></summary>{faq.answer && <p>{faq.answer}</p>}</details>)}</div>
+        </section>
+      )}
+      {recommendedTours.length > 0 && (
+        <section className="section recommended-tours" aria-labelledby="recommended-tours-title">
+          <Eyebrow>More in {tour.city}</Eyebrow>
+          <h2 id="recommended-tours-title">Recommended tours in {tour.city}</h2>
+          <div className="recommended-tour-grid">
+            {recommendedTours.map((item) => (
+              <article key={item.id}>
+                <img src={item.image} alt={item.title} />
+                <div>
+                  <span>{item.category || "Local experience"}</span>
+                  <h3>{item.title}</h3>
+                  <p><span className="material-symbols-outlined">location_on</span>{item.city}</p>
+                  <p><span className="material-symbols-outlined">schedule</span>{item.duration}</p>
+                  {Number(item.price_value) > 0 && <strong><Money amount={item.price_value} /> <small>per person starting price</small></strong>}
+                  <button onClick={() => go(`/tours/${item.id}`)}>View tour</button>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       )}
     </main>
@@ -4855,6 +4972,7 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
     ...tours.filter(
       (item) =>
         item.city === tourCity &&
+        item.category === tourCategory &&
         item.id !== tour?.id,
     ).sort((a, b) => Number(b.category === tourCategory) - Number(a.category === tourCategory)),
     { title: "Mumbai Street Food Tour", city: "Mumbai", category: "Food", duration: "3.5 hours", price: "₹3,050", image: images.food },
@@ -4866,6 +4984,7 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
   ]
     .filter((item, index, list) =>
       item.city === tourCity &&
+      item.category === tourCategory &&
       item.title !== tourTitle &&
       list.findIndex((candidate) => candidate.title === item.title) === index,
     )
@@ -4920,10 +5039,10 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
             <li>Bottled water and sanitization supplies.</li>
           </ul>
           <div className="price">
-            <small>Price starts from</small>
+            <small>Price</small>
             <b className="booking-price-by-mode">{formatInr(bookingPrices.shared)}</b>
             <b>₹1,500</b>
-            <span>per person</span>
+            <span>Per person starting price</span>
           </div>
           <button
             className="primary-button"
@@ -4965,9 +5084,9 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
         <section className="section gallery" id="tour-gallery">
           <Eyebrow>Visual journey</Eyebrow>
           <h2>Moments from {tourTitle}</h2>
-          <div className="gallery-grid">
+          <div className={`gallery-grid gallery-count-${Math.min(galleryImages.length, 3)}`}>
             {galleryImages.map((image, index) => (
-              <img className={index === 0 ? "gallery-main" : ""} src={image} alt="" key={image} />
+              <div className={`gallery-tile ${index === 0 ? "gallery-main" : ""}`} key={image}><img src={image} alt="" /></div>
             ))}
           </div>
         </section>
@@ -5009,7 +5128,7 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
                 <h3>{item.title}</h3>
                 <p><span className="material-symbols-outlined">location_on</span>Departure: {item.city || tourCity}</p>
                 <p><span className="material-symbols-outlined">schedule</span>Duration: {item.duration}</p>
-                <strong>From {item.price}</strong>
+                <strong>{item.price} <small>per person starting price</small></strong>
                 <button
                   onClick={() => go(
                     item.id
@@ -7781,6 +7900,13 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
   const [saving, setSaving] = useState(false);
   const update = (field, value) =>
     setForm((current) => ({ ...current, [field]: value }));
+  const removeGalleryImage = (index) => {
+    const images = form.gallery_images.split("\n").map((image) => image.trim()).filter(Boolean);
+    update("gallery_images", images.filter((_, imageIndex) => imageIndex !== index).join("\n"));
+  };
+  const removeGalleryFile = (index) => {
+    setGalleryFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+  };
   const updateTimeSlot = (index, value) => {
     setForm((current) => ({
       ...current,
@@ -8324,7 +8450,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
           if (!response.ok) throw new Error(formatApiError(body.detail, "Unable to upload a gallery image."));
           return body.image_url;
         }));
-        payload.gallery_images = uploadedImages;
+        payload.gallery_images = [...payload.gallery_images, ...uploadedImages];
       }
       if (videoFile) {
         const data = new FormData();
@@ -8771,15 +8897,21 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
             <button type="button" className="repeat-add" onClick={addInclusionItem}>+ Add inclusion</button>
           </fieldset>
           <label>
-            Gallery image URLs <small>(one URL per line, up to 10)</small>
+            Gallery image URLs <small>(one URL per line)</small>
             <textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." />
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} />
-            <small>{galleryFiles.length ? `${galleryFiles.length} new gallery image(s) ready to upload.` : "Add URLs above or choose replacement images."}</small>
-            {tour?.gallery_images?.length > 0 && !galleryFiles.length && (
-              <div className="admin-gallery-preview">
-                {tour.gallery_images.map((image) => <img src={image} alt="" key={image} />)}
+            <GalleryImageUploader
+              files={galleryFiles}
+              onAdd={(file) => setGalleryFiles((current) => appendUniqueGalleryFiles(current, [file]))}
+              onRemove={removeGalleryFile}
+            />
+            {form.gallery_images.split("\n").map((image) => image.trim()).filter(Boolean).map((image, index) => (
+              <div className="admin-gallery-item" key={`${image}-${index}`}>
+                <img src={image} alt="" />
+                <button type="button" className="repeat-remove" onClick={() => removeGalleryImage(index)} aria-label={`Remove gallery image ${index + 1}`}>
+                  <span className="material-symbols-outlined">delete</span>
+                </button>
               </div>
-            )}
+            ))}
           </label>
           <label>
             Traveller experience video URL <small>(YouTube embed or video URL)</small>
@@ -9191,6 +9323,13 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
   const [activeStep, setActiveStep] = useState(1);
   const update = (field, value) =>
     setForm((current) => ({ ...current, [field]: value }));
+  const removeGalleryImage = (index) => {
+    const images = form.gallery_images.split("\n").map((image) => image.trim()).filter(Boolean);
+    update("gallery_images", images.filter((_, imageIndex) => imageIndex !== index).join("\n"));
+  };
+  const removeGalleryFile = (index) => {
+    setGalleryFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+  };
   const updateListItem = (field, index, key, value) =>
     setForm((current) => ({
       ...current,
@@ -9373,7 +9512,7 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
             return body.image_url;
           }),
         );
-        payload.gallery_images = uploadedImages;
+        payload.gallery_images = [...payload.gallery_images, ...uploadedImages];
       }
       if (videoFile) {
         const uploadData = new FormData();
@@ -9496,8 +9635,23 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
 
           <section className={`multi-day-form-section ${activeStep === 5 ? "is-active" : ""}`}>
             <div className="multi-day-form-section-heading"><span className="material-symbols-outlined">photo_library</span><div><h2>Media and traveller details</h2><p>Add optional media and practical information.</p></div></div>
-            <label className="multi-day-wide-field">Gallery image URLs <small>One URL per line, up to 10</small><textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." /></label>
-            <label className="multi-day-wide-field">Or upload gallery images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} /><small>{galleryFiles.length ? `${galleryFiles.length} image(s) ready to upload.` : "JPEG, PNG, or WebP; up to 10 images."}</small></label>
+            <label className="multi-day-wide-field">Gallery image URLs <small>One URL per line</small><textarea rows="4" value={form.gallery_images} onChange={(event) => update("gallery_images", event.target.value)} placeholder="https://..." /></label>
+            <div className="multi-day-wide-field">
+              <span>Or upload gallery images</span>
+              <GalleryImageUploader
+                files={galleryFiles}
+                onAdd={(file) => setGalleryFiles((current) => appendUniqueGalleryFiles(current, [file]))}
+                onRemove={removeGalleryFile}
+              />
+            </div>
+            {form.gallery_images.split("\n").map((image) => image.trim()).filter(Boolean).map((image, index) => (
+              <div className="admin-gallery-item" key={`${image}-${index}`}>
+                <img src={image} alt="" />
+                <button type="button" className="repeat-remove" onClick={() => removeGalleryImage(index)} aria-label={`Remove gallery image ${index + 1}`}>
+                  <span className="material-symbols-outlined">delete</span>
+                </button>
+              </div>
+            ))}
             <label className="multi-day-wide-field">Traveller experience video <small>Optional URL or upload</small><input type="url" value={form.traveller_video_url} onChange={(event) => update("traveller_video_url", event.target.value)} placeholder="https://www.youtube.com/embed/..." /><input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} /></label>
             <label className="multi-day-wide-field">Meeting and joining details<textarea rows="3" value={form.meeting_details} onChange={(event) => update("meeting_details", event.target.value)} placeholder="Arrival airport, meeting time, joining instructions and end point." /></label>
           </section>
