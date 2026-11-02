@@ -3081,7 +3081,7 @@ function MultiDayTourDetail({
 
         <aside className="multi-day-booking-card">
           {tour.mode && <span>{tour.mode} journey</span>}
-          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : <><Money amount={basePrice} /> <small>Per person starting price</small></>}</h2>}
+          {(pricing.pricing_model === "on_request" || basePrice > 0) && <h2>{pricing.pricing_model === "on_request" ? "Price on request" : <Money amount={basePrice} />}</h2>}
           {availability.booking_type && <p>{availability.booking_type}{availability.max_travellers ? ` · up to ${availability.max_travellers} guests` : ""}</p>}
           <button className="primary-button" onClick={openBooking}>{bookingLabel} →</button>
         </aside>
@@ -4680,7 +4680,7 @@ function TourDetail({
           {selectedBookingPrice > 0 && (
             <div className="price">
               <b className="booking-price-by-mode"><Money amount={selectedBookingPrice} /></b>
-              <span>Per person starting price</span>
+              <span>Starting price per person</span>
             </div>
           )}
           <button className="primary-button booking-card-cta" onClick={openBooking}>
@@ -4845,7 +4845,7 @@ function TourDetail({
                   <h3>{item.title}</h3>
                   <p><span className="material-symbols-outlined">location_on</span>{item.city}</p>
                   <p><span className="material-symbols-outlined">schedule</span>{item.duration}</p>
-                  {Number(item.price_value) > 0 && <strong><Money amount={item.price_value} /> <small>per person starting price</small></strong>}
+                  {Number(item.price_value) > 0 && <strong><Money amount={item.price_value} /></strong>}
                   <button onClick={() => go(`/tours/${item.id}`)}>View tour</button>
                 </div>
               </article>
@@ -5042,7 +5042,6 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
             <small>Price</small>
             <b className="booking-price-by-mode">{formatInr(bookingPrices.shared)}</b>
             <b>₹1,500</b>
-            <span>Per person starting price</span>
           </div>
           <button
             className="primary-button"
@@ -5128,7 +5127,7 @@ function Dharavi({ go, tours, session = null, initialBooking = false, tourId = n
                 <h3>{item.title}</h3>
                 <p><span className="material-symbols-outlined">location_on</span>Departure: {item.city || tourCity}</p>
                 <p><span className="material-symbols-outlined">schedule</span>Duration: {item.duration}</p>
-                <strong>{item.price} <small>per person starting price</small></strong>
+                <strong>{item.price}</strong>
                 <button
                   onClick={() => go(
                     item.id
