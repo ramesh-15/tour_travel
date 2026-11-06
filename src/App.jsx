@@ -2066,7 +2066,7 @@ function HomeTourCarousel({ go, tours = [] }) {
           <button
             className="primary-button"
             onClick={() => tour.id
-              ? go(`/tours/${tour.id}`)
+              ? go(`/tours/${tour.id}?booking=1`)
               : go(`/contact?intent=book&tour=${encodeURIComponent(tour.title)}`)}
           >
             Book this tour →
@@ -2181,7 +2181,7 @@ function Tours({ go, tours }) {
                   className={tour.dark ? "dark-button" : "outline-button"}
                   onClick={() =>
                     tour.title === "Dharavi Slum Tours"
-                      ? go("/tours/dharavi")
+                      ? go("/tours/dharavi?booking=1")
                       : go(
                           `/contact?intent=book&tour=${encodeURIComponent(tour.title)}`,
                         )
@@ -2544,7 +2544,10 @@ function ToursV3({
       ? `?booking_mode=${encodeURIComponent(bookingMode)}`
       : "";
 
-    go(`/tours/${tour.id}${bookingModeQuery}`);
+    const bookingQuery = bookingModeQuery
+      ? `${bookingModeQuery}&booking=1`
+      : "?booking=1";
+    go(`/tours/${tour.id}${bookingQuery}`);
   };
   return (
     <main className="top-space">
@@ -5272,14 +5275,16 @@ function getTourEditorDurationOptions(tour) {
   return getTourDurationOptions(tour).map((option) => {
     const sharedTiers = normalizeTourPricingTiers(option.pricing?.shared_tiers);
     const privateTiers = normalizeTourPricingTiers(option.pricing?.private_tiers);
-    const numericMatch = String(option.duration || "").match(/^(\d+)\s*(hour|hours|day|days)$/i);
+    const numericMatch = String(option.duration || "").match(/^(\d+)\s*(hour|hours|day|days|minute|minutes)(?:\s+(\d+)\s*minutes?)?$/i);
     const durationValue = option.pricing?.duration_value || (numericMatch ? Number(numericMatch[1]) : "");
-    const durationUnit = option.pricing?.duration_unit || (numericMatch && numericMatch[2].toLowerCase().startsWith("day") ? "days" : "hours");
+    const durationUnit = option.pricing?.duration_unit || (numericMatch?.[2].toLowerCase().startsWith("day") ? "days" : numericMatch?.[2].toLowerCase().startsWith("minute") ? "minutes" : "hours");
+    const durationMinutes = option.pricing?.duration_minutes ?? (numericMatch?.[3] ? Number(numericMatch[3]) : 0);
     return {
       id: option.legacy ? createDurationOptionId() : option.id,
       duration: option.duration || "",
       duration_value: durationValue,
       duration_unit: durationUnit,
+      duration_minutes: durationMinutes,
       shared_slots: Number(option.pricing?.shared_slots) || Number(tour?.capacity) || 20,
       private_slots: Number(option.pricing?.private_slots) || Number(tour?.capacity) || 20,
       pricing_modes: option.availableModes.length
@@ -8050,6 +8055,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               duration: "",
               duration_value: "",
               duration_unit: "hours",
+              duration_minutes: 0,
               shared_slots: Number(current.capacity) || 20,
               private_slots: Number(current.capacity) || 20,
               pricing_modes: ["Shared"],
@@ -8187,11 +8193,17 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       );
     const hasDuplicateTravellerCount = (tiers) =>
       new Set(tiers.map((tier) => tier.travellers)).size !== tiers.length;
-    const durationOptions = form.duration_options.map((option) => ({
+    const durationOptions = form.duration_options.map((option) => {
+      const durationValue = Number(option.duration_value);
+      const durationMinutes = option.duration_unit === "hours" ? Number(option.duration_minutes || 0) : 0;
+      const durationUnit = option.duration_unit;
+      const durationLabel = `${durationValue} ${durationValue === 1 ? durationUnit.slice(0, -1) : durationUnit}${durationMinutes ? ` ${durationMinutes} ${durationMinutes === 1 ? "minute" : "minutes"}` : ""}`;
+      return {
       id: String(option.id || createDurationOptionId()).trim(),
-      duration: `${Number(option.duration_value)} ${Number(option.duration_value) === 1 ? option.duration_unit.slice(0, -1) : option.duration_unit}`,
-      duration_value: Number(option.duration_value),
-      duration_unit: option.duration_unit,
+      duration: durationLabel,
+      duration_value: durationValue,
+      duration_unit: durationUnit,
+      duration_minutes: durationMinutes,
       shared_slots: option.pricing_modes.includes("Shared") ? Number(option.shared_slots) : null,
       private_slots: option.pricing_modes.includes("Private") ? Number(option.private_slots) : null,
       available_modes: ["Shared", "Private"].filter((mode) =>
@@ -8203,7 +8215,8 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       private_tiers: option.pricing_modes.includes("Private")
         ? normalizePricingTiers(option.private_pricing_tiers)
         : [],
-    }));
+      };
+    });
     if (!durationOptions.length) {
       setStatus("Add at least one duration before saving this tour.");
       return;
@@ -8214,7 +8227,11 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
       const optionNumber = index + 1;
       const normalizedDuration = option.duration.toLowerCase();
       if (option.duration.length < 2) {
-        setStatus(`Duration ${optionNumber} needs a clear duration, such as 4 hours.`);
+        setStatus(`Duration ${optionNumber} needs a clear duration, such as 4 hours 30 minutes.`);
+        return;
+      }
+      if (!Number.isInteger(option.duration_minutes) || option.duration_minutes < 0 || option.duration_minutes > 59) {
+        setStatus(`${option.duration}: minutes must be between 0 and 59.`);
         return;
       }
       if (seenDurations.has(normalizedDuration)) {
@@ -8609,7 +8626,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
                       </button>
                     )}
                   </div>
-                  <div className="admin-duration-inputs"><label>Duration<input required type="number" min="1" max="365" value={durationOption.duration_value} onChange={(event) => updateDurationOption(durationIndex, "duration_value", event.target.value)} placeholder="4" /></label><label>Unit<select value={durationOption.duration_unit} onChange={(event) => updateDurationOption(durationIndex, "duration_unit", event.target.value)}><option value="hours">Hours</option><option value="days">Days</option></select></label></div>
+                  <div className="admin-duration-inputs"><label>Duration<input required type="number" min="1" max="365" value={durationOption.duration_value} onChange={(event) => updateDurationOption(durationIndex, "duration_value", event.target.value)} placeholder="4" /></label>{durationOption.duration_unit === "hours" && <label>Minutes<input type="number" min="0" max="59" value={durationOption.duration_minutes ?? 0} onChange={(event) => updateDurationOption(durationIndex, "duration_minutes", event.target.value)} placeholder="0" /></label>}<label>Unit<select value={durationOption.duration_unit} onChange={(event) => { const unit = event.target.value; updateDurationOption(durationIndex, "duration_unit", unit); if (unit !== "hours") updateDurationOption(durationIndex, "duration_minutes", 0); }}><option value="hours">Hours</option><option value="days">Days</option><option value="minutes">Minutes</option></select></label></div>
                   <span className="admin-mode-toggles">{["Shared", "Private"].map((mode) => <label key={mode}><input type="checkbox" checked={durationOption.pricing_modes.includes(mode)} onChange={() => updateDurationPricingModes(durationIndex, durationOption.pricing_modes.includes(mode) ? durationOption.pricing_modes.filter((item) => item !== mode) : [...durationOption.pricing_modes, mode])} /> {mode}</label>)}</span>
                   <div className="admin-pricing-type-options" role="group" aria-label={`Tour types for duration ${durationIndex + 1}`}>
                     <button

@@ -21,7 +21,7 @@ from typing import Generic, Literal, TypeVar
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -179,7 +179,8 @@ class DurationPricingOption(BaseModel):
     # edits also persist these numeric fields so the duration is never just
     # free-form text.
     duration_value: int | None = Field(default=None, ge=1, le=365)
-    duration_unit: Literal["hours", "days"] | None = None
+    duration_unit: Literal["hours", "days", "minutes"] | None = None
+    duration_minutes: int = Field(default=0, ge=0, le=59)
     shared_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     private_tiers: list[PricingTier] = Field(default_factory=list, max_length=20)
     # Seats are deliberately per duration and tour style. Older tours without
@@ -215,10 +216,15 @@ class DurationPricingOption(BaseModel):
             raise ValueError("A numeric duration needs both a value and a unit")
         if self.duration_value is not None:
             assert self.duration_unit is not None
+            if self.duration_unit != "hours" and self.duration_minutes:
+                raise ValueError("Additional minutes can only be added to an hourly duration")
             expected_unit = self.duration_unit[:-1] if self.duration_value == 1 else self.duration_unit
             expected_duration = f"{self.duration_value} {expected_unit}"
+            if self.duration_minutes:
+                minute_label = "minute" if self.duration_minutes == 1 else "minutes"
+                expected_duration += f" {self.duration_minutes} {minute_label}"
             if self.duration.strip().casefold() != expected_duration:
-                raise ValueError("Duration label must match its numeric value and unit")
+                raise ValueError("Duration label must match its numeric value, unit, and minutes")
         for mode, tiers in (("Shared", self.shared_tiers), ("Private", self.private_tiers)):
             if mode not in self.available_modes:
                 continue
@@ -1265,9 +1271,55 @@ def deliver_booking_whatsapp_confirmations(
     return notifications
 
 
+def deliver_paid_booking_notifications(booking: dict[str, object]) -> None:
+    """Send paid-booking email and WhatsApp notifications in the background."""
+    customer = db_models.get_user(int(booking["user_id"])) or {}
+    email_sent = send_email_to_customer(
+        booking=booking,
+        customer=customer,
+        max_attempts=3,
+        retry_delay=5,
+    )
+    LOGGER.info(
+        "Booking confirmation email result: booking_id=%s success=%s",
+        booking["id"],
+        email_sent,
+    )
+
+    customer_name = str(booking.get("customer_name") or customer.get("name") or "Guest")
+    tour_name = str(booking.get("tour_title") or "Your Tour")
+    travel_date = booking.get("travel_date")
+    if isinstance(travel_date, (date, datetime)):
+        travel_date = travel_date.strftime("%d %B %Y")
+    else:
+        travel_date = str(travel_date or "To be confirmed")
+    booking_reference = str(booking.get("tour_id") or booking.get("id") or "")
+
+    contact_phone = str(booking.get("contact_phone") or "").lstrip("+").strip()
+    if contact_phone:
+        send_whatsapp_booking_confirmation(
+            customer_name=customer_name,
+            tour_name=tour_name,
+            travel_date=travel_date,
+            booking_id=booking_reference,
+            contact_phone=contact_phone,
+        )
+    else:
+        LOGGER.warning("WhatsApp skipped for booking %s: no contact phone", booking["id"])
+
+    send_whatsapp_booking_confirmation(
+        customer_name=customer_name,
+        tour_name=tour_name,
+        travel_date=travel_date,
+        booking_id=booking_reference,
+        contact_phone="9196199 52139",
+    )
+
+
 @app.post("/api/verify-payment", response_model=RazorpayVerificationResult)
 def verify_razorpay_payment(
     data: RazorpayVerifyPaymentInput,
+    background_tasks: BackgroundTasks,
     user: dict[str, object] = Depends(customer_required),
 ) -> RazorpayVerificationResult:
     """Verify Checkout's HMAC signature before marking a booking as paid."""
@@ -1301,52 +1353,7 @@ def verify_razorpay_payment(
     
     LOGGER.info("booking details: %s  ", booking)
     if newly_verified:
-        customer = db_models.get_user(int(booking["user_id"]))
-        LOGGER.info("customer details: %s  ", customer)
-        email_sent =  send_email_to_customer(
-            booking=booking,
-            customer=customer,
-            max_attempts=3,
-            retry_delay=5,
-        )
-        LOGGER.info(
-            "Booking confirmation email result: booking_id=%s success=%s",
-            booking["id"],
-            email_sent,
-        )
-        try:
-            customer_name = str(
-                booking.get("customer_name")
-                or customer.get("name")
-                or "Guest"
-            )
-            LOGGER.info(f"Name : {customer_name}")
-
-            tour_name = str(booking.get("tour_title") or "Your Tour")
-            LOGGER.info(f"Tour Name : {tour_name}")
-            
-
-            travel_date = booking.get("travel_date")
-            LOGGER.info(f"Travel Date : {travel_date}")
-            if isinstance(travel_date, (date, datetime)):
-                travel_date = travel_date.strftime("%d %B %Y")
-            else:
-                travel_date = str(travel_date or "To be confirmed")
-            LOGGER.info(f"Travel Date : {travel_date}")
-
-            
-            booking_id = booking.get("tour_id")
-            contact_phone = booking.get("contact_phone")
-            contact_phone = contact_phone.lstrip("+")
-            send_whatsapp_booking_confirmation(customer_name=customer_name, tour_name=tour_name, travel_date=travel_date, booking_id=booking_id, contact_phone=contact_phone)
-            LOGGER.info(f" Traveller Booking confirmation WhatsApp result: booking_id={booking['id']} success=True")
-            contact_phone='9196199 52139'
-            send_whatsapp_booking_confirmation(customer_name=customer_name, tour_name=tour_name, travel_date=travel_date, booking_id=booking_id, contact_phone=contact_phone)
-            LOGGER.info(f" Admin Booking confirmation WhatsApp result: booking_id={booking['id']} success=True")
-        except ValueError:
-            # A legacy booking might not yet have a saved contact number.
-            # Never turn a successfully paid booking into a failed response.
-            LOGGER.info(f"Booking confirmation WhatsApp result: booking_id={booking['id']} success=False")
+        background_tasks.add_task(deliver_paid_booking_notifications, booking)
     return RazorpayVerificationResult(success=True, booking=Booking(**booking))
 
 

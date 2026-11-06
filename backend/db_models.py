@@ -1090,6 +1090,7 @@ def _tour_duration_options(tour: dict[str, Any], pricing: dict[str, Any]) -> lis
                     "duration": duration,
                     "duration_value": value.get("duration_value"),
                     "duration_unit": value.get("duration_unit"),
+                    "duration_minutes": value.get("duration_minutes") or 0,
                     "available_modes": value.get("available_modes"),
                     "shared_tiers": value.get("shared_tiers"),
                     "private_tiers": value.get("private_tiers"),
