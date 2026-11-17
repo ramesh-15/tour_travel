@@ -139,6 +139,11 @@ function AuthRequiredModal({ destination, onCancel, onContinue }) {
   );
 }
 
+function formatTripType(tripType) {
+  const label = tripType === "Festival special" ? "Festive special" : tripType || "";
+  return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function apiTourToUi(tour) {
   return {
     ...tour,
@@ -2160,13 +2165,13 @@ function Tours({ go, tours }) {
                 <div className="tour-meta">
                   <span>⌖ {tour.city}</span>
                   <span>
-                    {tour.trip_type} · {tour.mode}
+                    {formatTripType(tour.trip_type)} · {tour.mode}
                   </span>
                 </div>
                 <h2>{tour.title}</h2>
                 <p>{tour.text}</p>
                 <div className="tour-details">
-                  <span>◷ {tour.duration}</span>
+                  <span>◷ {tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
                   <strong>
                     {tour.price}
                     <small> / person</small>
@@ -2299,7 +2304,7 @@ function ToursV2({ go, tours }) {
                   <h2>{tour.title}</h2>
                   <p>{tour.text}</p>
                   <div className="tour-details">
-                    <span>{tour.duration}</span>
+                    <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
                     <strong>
                       {tour.price}
                       <small> / person</small>
@@ -2528,7 +2533,7 @@ function ToursV3({
     setFilter(nextFilter);
     setPage(1);
   };
-  const openTourBooking = (tour) => {
+  const openTourDetails = (tour) => {
     if (isMultiDayTour(tour)) {
       go(`/trips/${tour.id}`);
       return;
@@ -2544,10 +2549,7 @@ function ToursV3({
       ? `?booking_mode=${encodeURIComponent(bookingMode)}`
       : "";
 
-    const bookingQuery = bookingModeQuery
-      ? `${bookingModeQuery}&booking=1`
-      : "?booking=1";
-    go(`/tours/${tour.id}${bookingQuery}`);
+    go(`/tours/${tour.id}${bookingModeQuery}`);
   };
   return (
     <main className="top-space">
@@ -2631,7 +2633,7 @@ function ToursV3({
                     <h2>{tour.title}</h2>
                     <p>{tour.text}</p>
                     <div className="tour-details">
-                      <span>{tour.duration}</span>
+                      <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
                       <strong>
                         <TourPrice tour={tour} />
                         <small> / person</small>
@@ -2644,9 +2646,9 @@ function ToursV3({
                     </div>
                     <button
                       className={tour.dark ? "dark-button" : "outline-button"}
-                      onClick={() => openTourBooking(tour)}
+                      onClick={() => openTourDetails(tour)}
                     >
-                      Book this tour →
+                      View this tour →
                     </button>
                   </div>
                 </article>
@@ -2797,7 +2799,7 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
                   <h2>{tour.title}</h2>
                   <p>{tour.text || tour.description}</p>
                   <div className="tour-details">
-                    <span>{tour.duration}</span>
+                    <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
                     <strong>
                       <TourPrice tour={tour} />
                       <small> / person</small>
@@ -3172,7 +3174,7 @@ function TripsPageV2({ go, type }) {
                     <h2>{tour.title}</h2>
                     <p>{tour.text}</p>
                     <div className="tour-details">
-                      <span>{tour.duration}</span>
+                      <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
                       <strong>
                         {tour.price}
                         <small> / person</small>
@@ -3413,7 +3415,7 @@ function TripsPage({ go, type }) {
                 <h2>{trip.title}</h2>
                 <p>{trip.description}</p>
                 <div className="tour-details">
-                  <span>◷ {trip.duration}</span>
+                  <span>◷ {trip.duration}{trip.trip_type && ` / ${formatTripType(trip.trip_type)}`}</span>
                   <strong>
                     {trip.price}
                     <small> / person</small>
@@ -4570,7 +4572,7 @@ function TourDetail({
             {tour.time_slots?.length > 0 && <span>{tour.time_slots.map(formatTourTime).join(" · ")}</span>}
             {!tour.time_slots?.length && tour.start_time && <span>{formatTourTime(tour.start_time)}</span>}
             {bookingModeLabel && <span>{bookingModeLabel}</span>}
-            {tour.trip_type && <span>{tour.trip_type}</span>}
+            {tour.trip_type && <span>{formatTripType(tour.trip_type)}</span>}
           </div>
         </div>
       </Hero>
@@ -6712,7 +6714,7 @@ function BookingExperiencePage({
                 <img src={tour.image_url} alt="" />
                 <div className="booking-hero-overlay">
                   <span>{tour.city}</span>
-                  <span>{tour.trip_type}</span>
+                  <span>{formatTripType(tour.trip_type)}</span>
                 </div>
               </article>
               <header className="booking-tour-intro">
@@ -7324,7 +7326,7 @@ function AdminDashboardV2({
                               {tour.published ? "Published" : "Draft"}
                             </span>
                             <span>{tour.mode}</span>
-                            <span>{tour.trip_type}</span>
+                            <span>{formatTripType(tour.trip_type)}</span>
                           </div>
                           <h2>{tour.title}</h2>
                           <p>
@@ -7647,7 +7649,7 @@ function AdminCarouselPanel({
                       <small>{["festival", "unique"].includes(String(tour.category).toLowerCase()) ? "Festive" : tour.category}</small>
                     </td>
                     <td>
-                      {tour.trip_type}
+                      {formatTripType(tour.trip_type)}
                       <small>{tour.mode}</small>
                     </td>
                     <td>{tour.published ? "Published" : "Draft"}</td>
@@ -8544,12 +8546,10 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               value={form.trip_type}
               onChange={(event) => update("trip_type", event.target.value)}
             >
-              <option>Morning trip</option>
-              <option>Evening trip</option>
-              <option>Half-day trip</option>
-              <option>One-day trip</option>
-              <option>Weekly trip</option>
-              <option value="Festival special">Festive special</option>
+
+              <option value="Half day trip">Half Day</option>
+              <option value="Full Day Trip">Full Day</option>
+              <option value="Multi-Day Trip">Multi Day</option>
             </select>
           </label>
           <label>
@@ -9839,7 +9839,7 @@ function AdminDashboard({ session, onTourSaved, onTourDeleted }) {
                     <div>
                       <span>{tour.published ? "Published" : "Draft"}</span>
                       <span>{tour.mode}</span>
-                      <span>{tour.trip_type}</span>
+                      <span>{formatTripType(tour.trip_type)}</span>
                     </div>
                     <h2>{tour.title}</h2>
                     <p>
