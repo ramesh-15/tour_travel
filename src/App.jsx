@@ -49,7 +49,13 @@ const fallbackTours = [];
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const businessWhatsAppNumber = "919619952139";
-const MULTI_DAY_TRIP_TYPES = ["Weekly trip", "Multi-day trip"];
+const TRIP_TYPE_OPTIONS = [
+  { value: "None", label: "None" },
+  { value: "Half day trip", label: "Half Day Trip" },
+  { value: "Full Day Trip", label: "Full Day Trip" },
+  { value: "Multi-Day Trip", label: "Multi-Day Trip" },
+];
+const MULTI_DAY_TRIP_TYPES = ["Multi-Day Trip", "Weekly trip", "Multi-day trip"];
 
 function isMultiDayTour(tour) {
   return MULTI_DAY_TRIP_TYPES.includes(tour?.trip_type);
@@ -140,8 +146,22 @@ function AuthRequiredModal({ destination, onCancel, onContinue }) {
 }
 
 function formatTripType(tripType) {
+  if (!tripType || tripType === "None") return "";
   const label = tripType === "Festival special" ? "Festive special" : tripType || "";
   return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getEditorTripType(tripType) {
+  if (TRIP_TYPE_OPTIONS.some((option) => option.value === tripType)) return tripType;
+  return {
+    "Half-day trip": "Half day trip",
+    "Half Day trip": "Half day trip",
+    "Half-Day Trip": "Half day trip",
+    "One-day trip": "Full Day Trip",
+    "Full-Day Trip": "Full Day Trip",
+    "Weekly trip": "Multi-Day Trip",
+    "Multi-day trip": "Multi-Day Trip",
+  }[tripType] || "None";
 }
 
 function apiTourToUi(tour) {
@@ -2118,8 +2138,8 @@ function Tours({ go, tours }) {
     "Mumbai",
     "Delhi",
     "Hyderabad",
-    "One-day trip",
-    "Weekly trip",
+    "Full Day Trip",
+    "Multi-Day Trip",
     "Shared",
     "Private",
   ];
@@ -2171,7 +2191,7 @@ function Tours({ go, tours }) {
                 <h2>{tour.title}</h2>
                 <p>{tour.text}</p>
                 <div className="tour-details">
-                  <span>◷ {tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
+                  <span>◷ {tour.duration}{formatTripType(tour.trip_type) && ` / ${formatTripType(tour.trip_type)}`}</span>
                   <strong>
                     {tour.price}
                     <small> / person</small>
@@ -2304,7 +2324,7 @@ function ToursV2({ go, tours }) {
                   <h2>{tour.title}</h2>
                   <p>{tour.text}</p>
                   <div className="tour-details">
-                    <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
+                    <span>{tour.duration}{formatTripType(tour.trip_type) && ` / ${formatTripType(tour.trip_type)}`}</span>
                     <strong>
                       {tour.price}
                       <small> / person</small>
@@ -2633,7 +2653,7 @@ function ToursV3({
                     <h2>{tour.title}</h2>
                     <p>{tour.text}</p>
                     <div className="tour-details">
-                      <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
+                      <span>{tour.duration}{formatTripType(tour.trip_type) && ` / ${formatTripType(tour.trip_type)}`}</span>
                       <strong>
                         <TourPrice tour={tour} />
                         <small> / person</small>
@@ -2799,7 +2819,7 @@ function MultiDayToursPage({ go, mode = "", category = "", tours = [] }) {
                   <h2>{tour.title}</h2>
                   <p>{tour.text || tour.description}</p>
                   <div className="tour-details">
-                    <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
+                    <span>{tour.duration}{formatTripType(tour.trip_type) && ` / ${formatTripType(tour.trip_type)}`}</span>
                     <strong>
                       <TourPrice tour={tour} />
                       <small> / person</small>
@@ -3102,7 +3122,7 @@ function TripsPageV2({ go, type }) {
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const tripType = tripCatalog[type];
-  const selectedTripType = type === "one-day" ? "One-day trip" : "Weekly trip";
+  const selectedTripType = type === "one-day" ? "Full Day Trip" : "Multi-Day Trip";
   useEffect(() => {
     setLoading(true);
     const parameters = new URLSearchParams({
@@ -3174,7 +3194,7 @@ function TripsPageV2({ go, type }) {
                     <h2>{tour.title}</h2>
                     <p>{tour.text}</p>
                     <div className="tour-details">
-                      <span>{tour.duration}{tour.trip_type && ` / ${formatTripType(tour.trip_type)}`}</span>
+                      <span>{tour.duration}{formatTripType(tour.trip_type) && ` / ${formatTripType(tour.trip_type)}`}</span>
                       <strong>
                         {tour.price}
                         <small> / person</small>
@@ -3345,7 +3365,7 @@ function TripsPage({ go, type }) {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const tripType = tripCatalog[type];
-  const selectedTripType = type === "one-day" ? "One-day trip" : "Weekly trip";
+  const selectedTripType = type === "one-day" ? "Full Day Trip" : "Multi-Day Trip";
   const selectCity = (nextCity) => setCity(nextCity);
   useEffect(() => {
     setLoading(true);
@@ -3415,7 +3435,7 @@ function TripsPage({ go, type }) {
                 <h2>{trip.title}</h2>
                 <p>{trip.description}</p>
                 <div className="tour-details">
-                  <span>◷ {trip.duration}{trip.trip_type && ` / ${formatTripType(trip.trip_type)}`}</span>
+                  <span>◷ {trip.duration}{formatTripType(trip.trip_type) && ` / ${formatTripType(trip.trip_type)}`}</span>
                   <strong>
                     {trip.price}
                     <small> / person</small>
@@ -4572,7 +4592,7 @@ function TourDetail({
             {tour.time_slots?.length > 0 && <span>{tour.time_slots.map(formatTourTime).join(" · ")}</span>}
             {!tour.time_slots?.length && tour.start_time && <span>{formatTourTime(tour.start_time)}</span>}
             {bookingModeLabel && <span>{bookingModeLabel}</span>}
-            {tour.trip_type && <span>{formatTripType(tour.trip_type)}</span>}
+            {formatTripType(tour.trip_type) && <span>{formatTripType(tour.trip_type)}</span>}
           </div>
         </div>
       </Hero>
@@ -7798,7 +7818,7 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
     description: tour?.description || "",
     image_url: tour?.image_url || "",
     city: tour?.city || "Mumbai",
-    trip_type: tour?.trip_type || "One-day trip",
+    trip_type: getEditorTripType(tour?.trip_type),
     category: tour?.category || "",
     duration_options: getTourEditorDurationOptions(tour),
     capacity: tour?.capacity || 20,
@@ -8547,9 +8567,9 @@ function TourEditorV2({ tour, session, onCancel, onSaved }) {
               onChange={(event) => update("trip_type", event.target.value)}
             >
 
-              <option value="Half day trip">Half Day</option>
-              <option value="Full Day Trip">Full Day</option>
-              <option value="Multi-Day Trip">Multi Day</option>
+              {TRIP_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label>
@@ -9416,7 +9436,7 @@ function MultiDayTourEditor({ tour, session, onCancel, onSaved }) {
       image_url: form.image_url,
       city: `${form.start_city.trim()} to ${form.end_city.trim()}`,
       mode: form.mode,
-      trip_type: "Multi-day trip",
+      trip_type: "Multi-Day Trip",
       category: form.category,
       categories,
       start_city: form.start_city.trim(),

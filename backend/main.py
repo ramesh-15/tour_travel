@@ -91,6 +91,10 @@ ADMIN_PASSWORD = config.ADMIN_PASSWORD
 JWT_SECRET = config.JWT_SECRET
 JWT_EXPIRY_HOURS = 8
 TripType = Literal[
+    "None",
+    "Half day trip",
+    "Full Day Trip",
+    "Multi-Day Trip",
     "Morning trip",
     "Evening trip",
     "Half-day trip",
